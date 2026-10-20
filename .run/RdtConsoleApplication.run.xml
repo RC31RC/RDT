@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="RdtConsoleApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="rdt-console" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="io.github.rdt.console.RdtConsoleApplication" />
+    <option name="VM_PARAMETERS" value="-Xms32m -Xmx256m" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

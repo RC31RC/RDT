@@ -1,0 +1,2 @@
+io.github.rdt.spring.config.RdtAutoConfiguration
+io.github.rdt.spring.config.RdtClientAutoConfiguration

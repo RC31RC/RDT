@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.8</version>
+        <relativePath/>
+    </parent>
+    <groupId>io.github.rdt</groupId>
+    <artifactId>redis-distributed-toolkit</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>Redis Distributed Toolkit</name>
+    <description>JDK 21 distributed infrastructure for Spring Boot 4</description>
+        <modules>
+            <module>rdt-core</module>
+            <module>rdt-spring-boot-starter</module>
+            <module>rdt-console</module>
+            <module>rdt-consistency-jdbc-starter</module>
+        </modules>
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.parameters>true</maven.compiler.parameters>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <redisson.version>4.7.0</redisson.version>
+        <redisson.spring-data>redisson-spring-data-40</redisson.spring-data>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency><groupId>io.github.rdt</groupId><artifactId>rdt-consistency-jdbc-starter</artifactId><version>${project.version}</version></dependency>
+            <dependency>
+                <groupId>io.github.rdt</groupId>
+                <artifactId>rdt-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.rdt</groupId>
+                <artifactId>rdt-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson</artifactId>
+                <version>${redisson.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration><parameters>true</parameters><showWarnings>true</showWarnings></configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration><doclint>all</doclint><failOnWarnings>true</failOnWarnings></configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

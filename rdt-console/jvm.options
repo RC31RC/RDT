@@ -1,0 +1,6 @@
+# Java launcher arguments, not Spring Boot application properties.
+# Usage: java @jvm.options -jar rdt-console-1.0.0-SNAPSHOT.jar
+-Xms32m
+-Xmx256m
+# Small administrative workload: avoid G1 worker/remembered-set overhead.
+-XX:+UseSerialGC

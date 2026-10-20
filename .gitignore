@@ -1,0 +1,17 @@
+**/target/
+.idea/
+*.iml
+.DS_Store
+*.log
+.env
+.local/
+.pnpm-store/
+/docs/
+AGENTS.md
+
+# Local test sources and fixtures
+**/src/test/
+
+# Browser test artifacts
+rdt-console/web/test-results/
+rdt-console/web/playwright-report/

@@ -1,0 +1,24 @@
+node_modules/
+dist/
+
+# Local environment overrides; keep the build example.
+.env
+.env.*
+!.env.example
+
+# Build and tool caches
+.vite/
+.cache/
+.eslintcache
+*.tsbuildinfo
+
+# Local browser tests and reports
+/tests/
+/playwright.config.ts
+*.test.ts
+*.spec.ts
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

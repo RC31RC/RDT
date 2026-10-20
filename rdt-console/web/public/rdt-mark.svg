@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- redis-distributed-toolkit icon — hand-sketch vector -->
+  <defs>
+    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="4"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="180" fill="#fdfcf8"/>
+
+  <g filter="url(#rough)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+
+    <!-- dashed circuit traces -->
+    <g stroke="#8a8a8a" stroke-width="3" stroke-dasharray="12 10" opacity="0.85">
+      <path d="M430 330 Q330 250 250 210"/>
+      <path d="M400 420 Q250 400 160 380"/>
+      <path d="M410 520 Q270 590 200 640"/>
+      <path d="M470 600 Q420 740 380 800"/>
+      <path d="M600 610 Q700 740 770 800"/>
+      <path d="M640 520 Q790 570 860 610"/>
+      <path d="M640 420 Q800 380 880 350"/>
+      <path d="M600 320 Q680 240 740 190"/>
+      <path d="M520 280 Q510 190 520 120"/>
+      <path d="M350 480 Q220 480 140 470"/>
+      <path d="M660 470 Q780 470 860 470"/>
+    </g>
+
+    <!-- ===== central chip (tilted) ===== -->
+    <g transform="rotate(-8 512 460)">
+      <rect x="392" y="340" width="240" height="240" rx="14" fill="#d82c20" stroke="#8f1a12" stroke-width="6"/>
+      <rect x="408" y="356" width="208" height="208" rx="8" fill="none" stroke="#a01e14" stroke-width="3"/>
+      <!-- pins -->
+      <g stroke="#8f1a12" stroke-width="6">
+        <line x1="420" y1="340" x2="420" y2="316"/><line x1="470" y1="340" x2="470" y2="314"/>
+        <line x1="520" y1="340" x2="520" y2="318"/><line x1="570" y1="340" x2="570" y2="314"/>
+        <line x1="420" y1="580" x2="420" y2="604"/><line x1="470" y1="580" x2="470" y2="606"/>
+        <line x1="520" y1="580" x2="520" y2="602"/><line x1="570" y1="580" x2="570" y2="606"/>
+        <line x1="392" y1="420" x2="368" y2="420"/><line x1="392" y1="470" x2="366" y2="470"/>
+        <line x1="392" y1="520" x2="368" y2="520"/>
+      </g>
+      <!-- plug connector sticking out (starter plug) -->
+      <g>
+        <rect x="632" y="440" width="46" height="40" rx="6" fill="#b0251b" stroke="#8f1a12" stroke-width="5"/>
+        <line x1="678" y1="450" x2="702" y2="450" stroke="#8f1a12" stroke-width="6"/>
+        <line x1="678" y1="470" x2="702" y2="470" stroke="#8f1a12" stroke-width="6"/>
+      </g>
+      <!-- Redis stacked cubes -->
+      <g stroke="#ffffff" stroke-width="5" fill="none">
+        <path d="M512 392 L562 420 L512 448 L462 420 Z"/>
+        <path d="M462 420 L462 448 L512 476 L512 448"/>
+        <path d="M562 420 L562 448 L512 476 L512 448"/>
+        <path d="M512 452 L552 474 L512 496 L472 474 Z" opacity="0.9"/>
+        <path d="M472 474 L472 498 L512 520 L512 496" opacity="0.9"/>
+        <path d="M552 474 L552 498 L512 520 L512 496" opacity="0.9"/>
+      </g>
+      <!-- crackle sketch marks on chip -->
+      <g stroke="#a01e14" stroke-width="2.5" opacity="0.7">
+        <path d="M420 380 l14 10 l-8 12 l16 8"/>
+        <path d="M600 540 l-14 -10 l8 -12 l-14 -8"/>
+      </g>
+    </g>
+
+    <!-- ===== doodle modules ===== -->
+    <g stroke="#5a5a5a" stroke-width="5">
+
+      <!-- runtime: play button (top-left) -->
+      <g transform="translate(150 150) rotate(-6)">
+        <rect x="0" y="0" width="96" height="72" rx="8"/>
+        <path d="M36 20 L68 36 L36 52 Z" fill="#5a5a5a" stroke="none"/>
+      </g>
+
+      <!-- queue: envelope (left) -->
+      <g transform="translate(105 330) rotate(4)">
+        <rect x="0" y="0" width="104" height="70" rx="6"/>
+        <path d="M4 6 L52 44 L100 6"/>
+        <path d="M118 20 h34 m0 0 l-10 -8 m10 8 l-10 8" stroke-width="4"/>
+        <path d="M118 52 h34 m0 0 l-10 -8 m10 8 l-10 8" stroke-width="4"/>
+      </g>
+
+      <!-- support: coil/lifebuoy (top-center) -->
+      <g transform="translate(520 60)">
+        <path d="M0 10 q14 -14 24 0 q10 14 -4 22 q-16 8 -20 -6 q-4 -16 12 -20"/>
+        <circle cx="10" cy="62" r="26"/>
+        <circle cx="10" cy="62" r="11"/>
+        <path d="M10 36 v10 M10 78 v10 M-16 62 h10 M26 62 h10" stroke-width="4"/>
+      </g>
+
+      <!-- schedule: clock (top-right) -->
+      <g transform="translate(760 120) rotate(8)">
+        <circle cx="40" cy="40" r="42"/>
+        <path d="M40 22 v20 h18"/>
+        <path d="M82 18 a46 46 0 0 1 10 22 m0 0 l4 -12 m-4 12 l-12 -4" stroke-width="4"/>
+      </g>
+
+      <!-- id: snowflake (right) -->
+      <g transform="translate(880 300)">
+        <path d="M0 -38 v76 M-33 -19 l66 38 M33 -19 l-66 38"/>
+        <path d="M0 -38 l-10 12 M0 -38 l10 12 M0 38 l-10 -12 M0 38 l10 -12" stroke-width="4"/>
+        <path d="M-33 -19 l4 15 M-33 -19 l15 3 M33 19 l-4 -15 M33 19 l-15 -3" stroke-width="4"/>
+        <path d="M33 -19 l-15 3 M33 -19 l-4 15 M-33 19 l15 -3 M-33 19 l4 -15" stroke-width="4"/>
+      </g>
+
+      <!-- config: gear (left-mid) -->
+      <g transform="translate(150 480) rotate(10)">
+        <circle cx="0" cy="0" r="34"/>
+        <circle cx="0" cy="0" r="13"/>
+        <g stroke-width="7">
+          <line x1="0" y1="-34" x2="0" y2="-48"/><line x1="24" y1="-24" x2="34" y2="-34"/>
+          <line x1="34" y1="0" x2="48" y2="0"/><line x1="24" y1="24" x2="34" y2="34"/>
+          <line x1="0" y1="34" x2="0" y2="48"/><line x1="-24" y1="24" x2="-34" y2="34"/>
+          <line x1="-34" y1="0" x2="-48" y2="0"/><line x1="-24" y1="-24" x2="-34" y2="-34"/>
+        </g>
+      </g>
+
+      <!-- annotation: @ (bottom-left) -->
+      <g transform="translate(300 640)">
+        <circle cx="0" cy="0" r="42"/>
+        <circle cx="2" cy="-2" r="15"/>
+        <path d="M17 -2 q0 22 14 20 q12 -2 10 -24" fill="none"/>
+      </g>
+
+      <!-- lock: padlock (bottom-left corner) -->
+      <g transform="translate(180 760) rotate(-5)">
+        <rect x="0" y="26" width="70" height="58" rx="8"/>
+        <path d="M12 28 v-12 a23 23 0 0 1 46 0 v12"/>
+        <circle cx="35" cy="52" r="7" fill="#5a5a5a" stroke="none"/>
+        <line x1="35" y1="56" x2="35" y2="70"/>
+      </g>
+
+      <!-- lease: hourglass+key (right-mid lower) -->
+      <g transform="translate(860 560) rotate(6)">
+        <path d="M0 0 h64 M0 88 h64 M6 4 q26 40 26 40 q0 0 -26 40 M58 4 q-26 40 -26 40 q0 0 26 40"/>
+        <circle cx="86" cy="20" r="10"/>
+        <path d="M92 28 l18 22 m-6 -4 l8 -4 m-14 12 l8 -4" stroke-width="4"/>
+      </g>
+
+      <!-- cache: db cylinder + lightning (bottom-right) -->
+      <g transform="translate(700 780) rotate(-4)">
+        <ellipse cx="34" cy="10" rx="34" ry="12"/>
+        <path d="M0 10 v52 q0 12 34 12 q34 0 34 -12 v-52"/>
+        <path d="M0 36 q0 12 34 12 q34 0 34 -12" stroke-width="4"/>
+        <path d="M-18 30 l14 -22 l-4 16 l14 -4 l-16 24 l4 -14 Z" fill="#5a5a5a" stroke="none"/>
+      </g>
+
+      <!-- ratelimit: speedometer (bottom-right corner) -->
+      <g transform="translate(880 780) rotate(5)">
+        <path d="M-40 20 a44 44 0 0 1 80 0"/>
+        <path d="M0 18 L22 -14"/>
+        <circle cx="0" cy="18" r="6" fill="#5a5a5a" stroke="none"/>
+        <path d="M-32 -8 l-8 -6 M0 -24 v-10 M32 -8 l8 -6" stroke-width="4"/>
+      </g>
+    </g>
+
+    <!-- RDT handwritten signature -->
+    <g stroke="#d82c20" stroke-width="7" fill="none">
+      <path d="M430 660 L420 740 M430 660 q34 -6 34 16 q0 20 -30 22 q26 4 34 40"/>
+      <path d="M478 664 q-26 70 4 76 q30 6 38 -60 M498 660 L516 656 M506 664 L500 726"/>
+      <path d="M560 660 L548 738 M556 664 q40 -8 40 30 q0 40 -44 44"/>
+      <path d="M400 768 q120 26 250 -6" stroke-width="5"/>
+      <path d="M420 792 q110 20 220 -8" stroke-width="4" opacity="0.7"/>
+    </g>
+
+    <!-- stray sketch marks -->
+    <g stroke="#b0b0b0" stroke-width="3" opacity="0.6">
+      <path d="M120 880 l30 6 M126 896 l22 4"/>
+      <path d="M900 120 l26 -8 M912 140 l18 -6"/>
+      <path d="M340 130 l20 10 M348 148 l14 8"/>
+    </g>
+  </g>
+</svg>

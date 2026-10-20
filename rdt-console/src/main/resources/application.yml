@@ -1,0 +1,42 @@
+server:
+  port: ${RDT_CONSOLE_PORT:9898}
+  tomcat:
+    max-connections: ${RDT_CONSOLE_MAX_CONNECTIONS:128}
+    accept-count: 32
+    connection-timeout: 5s
+    keep-alive-timeout: 15s
+spring:
+  application:
+    name: rdt-console
+  threads:
+    virtual:
+      # Applies to supported Spring/Tomcat executors, not Netty event loops.
+      enabled: true
+rdt:
+  console:
+    api-path: /rdt/management
+    token-ttl: 12h
+    # Redis targets and namespace scope are selected after local Console login.
+    connections:
+      directory: ${RDT_CONSOLE_CONNECTIONS_DIRECTORY:${user.home}/.rdt-console}
+      connect-timeout: 3s
+      command-timeout: 10s
+    alerts:
+      poll-interval: 30s
+      repeat-interval: 1m
+      recent-window: 5m
+      warning-count: 1
+      critical-count: 100
+      recent-critical-count: 20
+      oldest-warning-age: 10m
+    archive:
+      enabled: ${RDT_ARCHIVE_ENABLED:true}
+      sink: ${RDT_ARCHIVE_SINK:local}
+      directory: ${RDT_ARCHIVE_DIRECTORY:${user.home}/.rdt-console/archive}
+      cron: "0 0 2 * * ?"
+      zone: ${RDT_ARCHIVE_ZONE:Asia/Shanghai}
+      dispatched-timeout: 10m
+      retention-days: 30
+logging:
+  level:
+    io.github.rdt: INFO

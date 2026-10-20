@@ -1,0 +1,15 @@
+services:
+  redis:
+    image: redis:7.4.5-alpine
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - rdt-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+volumes:
+  rdt-redis:
