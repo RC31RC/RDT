@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
@@ -56,18 +57,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
-import org.redisson.api.RExecutorService;
 import org.redisson.api.RMap;
 import org.redisson.api.RScoredSortedSet;
 import org.redisson.api.RScript;
 import org.redisson.api.RedissonClient;
-import org.redisson.api.WorkerOptions;
-import org.redisson.api.options.ExecutorOptions;
 import org.redisson.client.codec.StringCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** 持久化调度进度并使用看门狗锁保护，以有界并发的虚拟线程执行任务。 */
+/** Persistent fenced scheduling with bounded virtual-thread workers and expiring JSON mailboxes. */
 public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplate, AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(RedissonScheduledTaskTemplate.class);
     private static final String REDIS_TIME = """
@@ -78,6 +76,7 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     private final KeySpace keys;
     private final JsonCodec json;
     private final JobExecutionRepository executions;
+    private final JobMailbox mailbox;
     private final ScheduleDueIndex due;
     private final DistributedLockTemplate locks;
     private final SchedulerSettings options;
@@ -86,9 +85,7 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     private final String instanceId;
     private final RuntimeIdentity identity;
     private final RetryClassifier retryClassifier;
-    private final RExecutorService jobWorkers;
     private final Map<String, ActiveAttempt> activeAttempts = new ConcurrentHashMap<>();
-    private final AtomicBoolean nativeWorkersStarted = new AtomicBoolean();
     private volatile long directoryRefresh;
     private volatile List<RuntimeInstance> directory = List.of();
     private final long workLeaseMillis;
@@ -100,6 +97,7 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     // Each submitted invocation gets its own virtual thread; the semaphore below only applies backpressure.
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
     private final Semaphore capacity;
+    private final Future<?> mailboxReceiver;
     private volatile RdtMetrics metrics = RdtMetrics.NONE;
     private final RuntimeDirectoryProvider routing;
     private final Map<String, Semaphore> jobSlots = new ConcurrentHashMap<>();
@@ -130,14 +128,15 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         this.json = json;
         this.locks = locks;
         this.options = options;
-        executions=new JobExecutionRepository(client,keys,json,options.resultTtl());
+        executions=new JobExecutionRepository(client,keys,json,options.resultTtl(),options.maxHistoryEntries());
         due=new ScheduleDueIndex(client,keys,json);
+        mailbox = new JobMailbox(client, keys, json);
         routing = new RedisRuntimeDirectoryProvider(client, keys, json);
         workLeaseMillis = options.workerLease().toMillis();
         this.instanceId = identity.instanceId();
-        jobWorkers = nativeExecutor(identity.instanceId(), identity.runId());
         defaultPolicy = options.policy();
         capacity = new Semaphore(options.maxConcurrentTasks());
+        mailboxReceiver = workers.submit(this::receiveInvocations);
         long renewalInterval = Math.max(1, Math.min(workLeaseMillis / 3, options.pollInterval().toMillis()));
         leaseTimer.scheduleWithFixedDelay(this::renewAttempts, renewalInterval, renewalInterval, TimeUnit.MILLISECONDS);
         timer.scheduleWithFixedDelay(this::tick, options.pollInterval().toMillis(),
@@ -164,6 +163,7 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             locks.execute("schedule:" + taskId, LockOptions.defaults(), () -> {
                 RMap<String, String> state = state(taskId);
                 ensureScheduleState(registration, state, true);
+                new ManagementIndex(client, keys).register("tasks", taskId);
                 state.fastPut("route", registration.route.name());
                 state.fastPut("targetInstanceId", registration.targetInstanceId);
                 due.refreshDueIndex(taskId, state);
@@ -181,7 +181,6 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "Schedule registration failed", e);
         }
 
-        new ManagementIndex(client, keys).register("tasks", taskId);
         identity.register("job:" + taskId, () -> new RuntimeComponent("job", taskId, "", "", fingerprint(registration), 1, jobActive.computeIfAbsent(taskId, ignored -> new AtomicInteger()).get(), 0, 0));
         return () -> {
             registration.active = false;
@@ -205,27 +204,21 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
 
     private void dispatchDue() {
         if (!identity.acceptingNewWork()) return;
-        if (!registrations.isEmpty() && nativeWorkersStarted.compareAndSet(false, true)) {
-            try {
-                jobWorkers.registerWorkers(WorkerOptions.defaults().workers(options.maxConcurrentTasks())
-                        .executorService(workers).tasksInjector(task -> {
-                            if (!(task instanceof JobInvocation invocation)) {
-                                throw new RdtConfigurationException("Untrusted RDT worker task type");
-                            }
-                            invocation.handler(this::executeInvocation);
-                        }));
-            } catch (RuntimeException failure) {
-                nativeWorkersStarted.set(false);
-                throw failure;
-            }
-        }
+        // Scan only locally executable definitions. Historical/unregistered IDs never spend
+        // this node's candidate budget and no large ZRANGEBYSCORE OFFSET is needed.
+        List<String> registered = registrations.keySet().stream().sorted().toList();
+        if (registered.isEmpty()) return;
+        int start = Math.floorMod(dueCursor.get(), registered.size());
+        List<String> candidates = new ArrayList<>();
+        for (int i = 0; i < Math.min(ScheduleDueIndex.LOCAL_SCAN_LIMIT, registered.size()); i++)
+            candidates.add(registered.get((start + i) % registered.size()));
         long now = now();
-        RScoredSortedSet<String> due = this.due.dueIndex();
-        int count = due.count(0, true, now, true);
-        if (count == 0) return;
-        int offset = dueCursor.getAndUpdate(current -> count <= options.maxDuePerPoll()
-                ? 0 : (current + options.maxDuePerPoll()) % count);
-        List<String> ids = due.valueRange(0, true, now, true, offset % count, options.maxDuePerPoll()).stream().toList();
+        var page = due.findDue(candidates, now,
+                Math.min(options.maxDuePerPoll(), ScheduleDueIndex.LOCAL_SCAN_LIMIT));
+        // Advance by examined IDs, not by returned IDs: cold pages and perpetually due jobs
+        // cannot repeatedly consume the same prefix or starve the end of a page.
+        dueCursor.set((start + page.scanned()) % registered.size());
+        List<String> ids = page.ids();
         for (String id : ids) {
             Registration registration = registrations.get(id);
             if (registration != null) withJobLock(id, () -> coordinate(registration, now));
@@ -262,10 +255,38 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         }
     }
 
-    private RExecutorService nativeExecutor(String worker, String run) {
-        return client.getExecutorService(ExecutorOptions.name(keys.key("job-worker", worker + ":" + run))
-                .codec(JobCodec.create())
-                .taskRetryInterval(Duration.ZERO));
+    private void receiveInvocations() {
+        Semaphore submitted = new Semaphore(options.maxConcurrentTasks());
+        while (!closed.get() && !Thread.currentThread().isInterrupted()) {
+            int reserved = 0;
+            try {
+                if (!identity.acceptingNewWork() || registrations.isEmpty()) {
+                    Thread.sleep(100);
+                    continue;
+                }
+                submitted.acquire();
+                reserved = 1;
+                while (reserved < options.maxConcurrentTasks() && submitted.tryAcquire()) reserved++;
+                List<String> messages = mailbox.receive(instanceId, identity.runId(), reserved);
+                for (String value : messages) {
+                    JobInvocation invocation = json.read(value, JobInvocation.class);
+                    workers.submit(() -> {
+                        try { executeInvocation(invocation); }
+                        finally { submitted.release(); }
+                    });
+                    reserved--;
+                }
+
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (RuntimeException error) {
+                if (!closed.get()) logDispatchFailure("mailbox", "mailbox", error);
+                try { Thread.sleep(100); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            } finally {
+                if (reserved > 0) submitted.release(reserved);
+            }
+        }
     }
 
     private boolean withJobLock(String jobId, Runnable action) {
@@ -284,6 +305,7 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     private void coordinate(Registration registration, long now) {
         if (!identity.acceptingNewWork()) return;
         RMap<String, String> state = state(registration.id);
+        if ("true".equals(state.get("retired"))) return;
         ScheduleState definition = ensureScheduleState(registration, state, false);
         if (!definition.active()) return;
         JobExecution execution = executions.execution(state);
@@ -329,7 +351,7 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
                                 && component.definition().equals(fingerprint(registration))))
                 .filter(node -> registration.route != JobRoute.SPECIFIED || node.instanceId().equals(registration.targetInstanceId))
                 .toList());
-        // Detached programmatic templates have no Spring registry, but still use the same native worker protocol.
+        // Detached programmatic templates have no Spring registry but use the same fenced worker protocol.
         if (eligible.stream().noneMatch(node -> node.runId().equals(identity.runId())) && identity.acceptingNewWork()
                 && (registration.route != JobRoute.SPECIFIED || instanceId.equals(registration.targetInstanceId))) {
             eligible.add(new RuntimeInstance(instanceId, identity.runId(), "application", 0, now, workLeaseMillis, 0, options.maxConcurrentTasks(), identity.generation(), false, identity.components(), identity.pressure()));
@@ -358,8 +380,8 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
                 if (node.runId().equals(identity.runId())) {
                     workers.submit(() -> executeInvocation(invocation));
                 } else {
-                    // Do not create a native result waiter per execution. RDT persists acceptance/results itself.
-                    nativeExecutor(node.instanceId(), node.runId()).execute(invocation);
+                    // Redis-native TTL also reclaims a dead run with no worker or maintenance process.
+                    mailbox.send(node.instanceId(), node.runId(), invocation, options.workerLease(), node.scheduleConcurrency());
                 }
                 metrics.increment("rdt.schedule.dispatch", "result", "ok");
                 return;
@@ -629,6 +651,11 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
      */
     private ScheduleState ensureScheduleState(Registration registration, RMap<String, String> state,
                                               boolean registering) {
+        if ("true".equals(state.get("retired"))) {
+            RdtSupport.require(!registering, "Task has been globally retired: " + registration.id);
+            return new ScheduleState(Long.MAX_VALUE, false);
+        }
+
         String fingerprint = fingerprint(registration);
         // 只有会改变触发行为的策略参与集群一致性检查；展示名、结果 TTL 和注册时的更新许可不参与。
         String policy = registration.policy.failureMode() + ":" + registration.policy.retry()
@@ -715,7 +742,7 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         timer.shutdownNow();
         registrations.keySet().forEach(id -> identity.unregister("job:" + id));
         registrations.clear();
-        if (nativeWorkersStarted.get()) jobWorkers.deregisterWorkers();
+        mailboxReceiver.cancel(true);
         stop(workers);
         leaseTimer.shutdownNow();
     }

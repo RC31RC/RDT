@@ -185,6 +185,21 @@ public final class RdtConsoleManagementController {
         return management.withManagement(service -> service.queries(namespace).executions(taskId, offset, limit));
     }
 
+    @PostMapping("/tasks/{taskId}/retire")
+    public ManagementCommandResponse retire(
+            @RequestHeader("X-Rdt-Connection-Revision")
+            long connectionRevision,
+            @RequestParam
+            String namespace,
+            @PathVariable
+            String taskId,
+            @RequestParam
+            boolean confirmed) {
+        if (!confirmed) return new ManagementCommandResponse(false);
+        return management.withCommandManagement(connectionRevision,
+                service -> new ManagementCommandResponse(service.commands(namespace).retireTask(taskId)));
+    }
+
     @PostMapping("/tasks/{taskId}/paused")
     public ManagementCommandResponse paused(
             @RequestHeader("X-Rdt-Connection-Revision")

@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ScheduledExecutorService;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -93,11 +94,21 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
                                                 drop.accept(spec);
                                                 return;
                                             }
+                                            if (raw.getBytes(StandardCharsets.UTF_8).length > policy.maxMessageBytes()) {
+                                                drop.accept(spec);
+                                                return;
+                                            }
                                             if (!listenerCapacity.tryAcquire()) {
                                                 drop.accept(spec);
                                                 return;
                                             }
                                             if (!budget.tryAcquireHandler()) {
+                                                listenerCapacity.release();
+                                                drop.accept(spec);
+                                                return;
+                                            }
+                                            if (!budget.tryReserve()) {
+                                                budget.releaseHandler();
                                                 listenerCapacity.release();
                                                 drop.accept(spec);
                                                 return;
@@ -123,11 +134,13 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
                                                                         spec.destination(),
                                                                         e);
                                                             } finally {
+                                                                budget.release(1);
                                                                 budget.releaseHandler();
                                                                 listenerCapacity.release();
                                                             }
                                                         });
                                             } catch (RuntimeException e) {
+                                                budget.release(1);
                                                 budget.releaseHandler();
                                                 listenerCapacity.release();
                                                 log.warn("Broadcast rejected during shutdown", e);
@@ -169,6 +182,7 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
             throws Exception {
         try {
             handler.handle(message);
+            if (failuresSoFar > 0) failureRecorder.clearFirstFailure(spec, message);
         } catch (Exception error) {
             if (error instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
                 Thread.currentThread().interrupt();
@@ -181,6 +195,7 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
             if (!retryClassifier.isRetryable(error) || !effectivePolicy.retry().canRetry(failed)) {
                 failureRecorder.saveFailure(
                         failureRecorder.failure(spec, message, failed, error), effectivePolicy);
+                failureRecorder.clearFirstFailure(spec, message);
                 return;
             }
             if (volatileWaiting.incrementAndGet() > policy.localBufferCapacity()) {
@@ -195,17 +210,25 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
                         effectivePolicy);
                 return;
             }
-            transfer.schedule(
+            if (!budget.tryReserve()) {
+                volatileWaiting.decrementAndGet();
+                drop.accept(spec);
+                return;
+            }
+            try {
+                transfer.schedule(
                     () -> {
                         volatileWaiting.decrementAndGet();
                         // Capture this subscription, not a registry lookup that can resolve a
                         // replacement listener.
-                        if (closed.get() || stopped.get() || !identity.accepting()) return;
+                        if (closed.get() || stopped.get() || !identity.accepting()) { budget.release(1); return; }
                         if (!identity.acceptingNewWork() || !listenerSlots.tryAcquire()) {
+                            budget.release(1);
                             drop.accept(spec);
                             return;
                         }
                         if (!budget.tryAcquireHandler()) {
+                            budget.release(1);
                             listenerSlots.release();
                             drop.accept(spec);
                             return;
@@ -229,11 +252,13 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
                                                     spec.destination(),
                                                     failure);
                                         } finally {
+                                            budget.release(1);
                                             budget.releaseHandler();
                                             listenerSlots.release();
                                         }
                                     });
                         } catch (RuntimeException submission) {
+                            budget.release(1);
                             budget.releaseHandler();
                             listenerSlots.release();
                             throw submission;
@@ -241,6 +266,11 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
                     },
                     effectivePolicy.retry().delayAfter(failed).toMillis(),
                     TimeUnit.MILLISECONDS);
+            } catch (RuntimeException rejected) {
+                budget.release(1);
+                volatileWaiting.decrementAndGet();
+                throw rejected;
+            }
         }
     }
 }

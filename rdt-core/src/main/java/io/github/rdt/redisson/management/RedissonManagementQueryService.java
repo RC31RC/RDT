@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.redisson.api.RMap;
+import org.redisson.api.RScript;
 import org.redisson.api.RStream;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.stream.PendingResult;
@@ -121,18 +122,19 @@ public final class RedissonManagementQueryService implements ManagementQueryServ
         if (client.getKeys().countExists(key) == 0) {
             return Optional.empty();
         }
-        return Optional.of(readTask(taskId, key));
+        return readTask(taskId, key);
     }
 
-    private TaskView readTask(String taskId, String key) {
+    private Optional<TaskView> readTask(String taskId, String key) {
         Map<String, String> state = RedisSupport.redis("read task state", () ->
                 client.<String, String>getMap(key, StringCodec.INSTANCE).readAllMap());
+        if (state.isEmpty() || "true".equals(state.get("retired"))) return Optional.empty();
         String definition = state.get("definition");
         long next = parseLong(state.get("next"), "schedule next", key);
         JobExecution execution = state.get("execution") == null ? null : json.read(state.get("execution"), JobExecution.class);
-        return new TaskView(taskId, key, definition, next, state.get("displayName"),
+        return Optional.of(new TaskView(taskId, key, definition, next, state.get("displayName"),
                 "true".equals(state.get("paused")), execution == null ? "" : execution.status(),
-                execution == null ? "" : execution.executionId(), state.getOrDefault("route", "HEALTH_FIRST"));
+                execution == null ? "" : execution.executionId(), state.getOrDefault("route", "HEALTH_FIRST")));
     }
 
     private void validatePage(int offset, int limit) {
@@ -159,7 +161,7 @@ public final class RedissonManagementQueryService implements ManagementQueryServ
         List<TaskView> items = new ArrayList<>();
         for (String id : index.valueRange(offset, offset + limit - 1)) {
             String key = keys.key("schedule-state", id);
-            if (client.getKeys().countExists(key) > 0) items.add(readTask(id, key));
+            if (client.getKeys().countExists(key) > 0) readTask(id, key).ifPresent(items::add);
             else index.remove(id);
         }
         return new ManagementPage<>(items, offset, limit, index.size());
@@ -173,7 +175,7 @@ public final class RedissonManagementQueryService implements ManagementQueryServ
         indexes.prune("attempts:" + taskId);
         var ids = indexes.resources("attempts:" + taskId).valueRangeReversed(offset, offset + limit - 1);
         if (ids.isEmpty()) return List.of();
-        var values = client.<String, String>getMapCache(keys.key("schedule-results", taskId), StringCodec.INSTANCE)
+        var values = client.<String, String>getMap(keys.key("schedule-results", taskId), StringCodec.INSTANCE)
                 .getAll(new HashSet<>(ids));
         return ids.stream().map(values::get).filter(Objects::nonNull)
                 .map(raw -> (TaskResult) json.read(raw, TaskResult.class)).toList();
@@ -236,9 +238,25 @@ public final class RedissonManagementQueryService implements ManagementQueryServ
         RdtSupport.component(taskId);
         RdtSupport.require(offset >= 0 && limit >= 1 && limit <= 200, "Invalid execution page");
         var index = client.<String>getScoredSortedSet(keys.key("schedule-execution-index", taskId), StringCodec.INSTANCE);
-        var ids = index.valueRangeReversed(offset, offset + limit - 1);
+        List<String> ids = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, """
+                local t = redis.call('TIME'); local now = t[1]*1000+math.floor(t[2]/1000)
+                local expired = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now, 'LIMIT', 0, 4096)
+                for _, id in ipairs(expired) do
+                  redis.call('ZREM', KEYS[1], id); redis.call('ZREM', KEYS[2], id)
+                  redis.call('HDEL', KEYS[3], id)
+                end
+                local rows = redis.call('ZREVRANGE', KEYS[1], ARGV[1], tonumber(ARGV[1])+tonumber(ARGV[2])-1)
+                local result = {}
+                for _, id in ipairs(rows) do
+                  local expiry = redis.call('ZSCORE', KEYS[2], id)
+                  if expiry and tonumber(expiry) > now then table.insert(result, id) end
+                end
+                return result
+                """, RScript.ReturnType.LIST,
+                List.of(index.getName(), keys.key("schedule-execution-expiry", taskId),
+                        keys.key("schedule-executions", taskId)), offset, limit);
         if (ids.isEmpty()) return List.of();
-        var values = client.<String, String>getMapCache(keys.key("schedule-executions", taskId), StringCodec.INSTANCE)
+        var values = client.<String, String>getMap(keys.key("schedule-executions", taskId), StringCodec.INSTANCE)
                 .getAll(new HashSet<>(ids));
         return ids.stream().map(values::get).filter(Objects::nonNull)
                 .map(raw -> (JobExecution) json.read(raw, JobExecution.class))

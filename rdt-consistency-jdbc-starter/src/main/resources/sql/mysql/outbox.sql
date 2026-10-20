@@ -6,7 +6,9 @@ CREATE TABLE rdt_outbox (
  queue_mode VARCHAR(32) NOT NULL COMMENT 'STREAM or RELIABLE_BROADCAST transport',
  envelope LONGTEXT NOT NULL COMMENT 'Complete immutable JSON message envelope',
  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING CLAIMED PUBLISHED DEAD',
- failure_count INTEGER NOT NULL DEFAULT 0 COMMENT 'Confirmed send failures only',
+ failure_count INTEGER NOT NULL DEFAULT 0 COMMENT 'Confirmed send failures in the current delivery budget',
+ version BIGINT NOT NULL DEFAULT 0 COMMENT 'Fences stale DEAD management actions across manual retries',
+ dead_at TIMESTAMP(3) COMMENT 'Database time when relay exhausted its failure budget',
  available_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Next relay time from database clock',
  owner VARCHAR(512) COMMENT 'Claiming instance and process run',
  claim_token VARCHAR(36) COMMENT 'Fences stale relay acknowledgements',
@@ -20,3 +22,6 @@ CREATE TABLE rdt_outbox (
 CREATE INDEX rdt_outbox_due ON rdt_outbox(namespace,status,available_at);
 CREATE INDEX rdt_outbox_claim ON rdt_outbox(namespace,status,claim_until);
 CREATE INDEX rdt_outbox_retention ON rdt_outbox(namespace,status,published_at);
+
+-- Bound status-filtered keyset management pages within one namespace.
+CREATE INDEX rdt_outbox_management ON rdt_outbox(namespace,status,created_at,id);

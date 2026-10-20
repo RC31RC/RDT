@@ -17,6 +17,8 @@ public class RdtConsoleApiErrors {
     @ExceptionHandler(RdtException.class)
     public ResponseEntity<Map<String, String>> rdtError(RdtException error) {
         HttpStatus status = switch (error.code()) {
+            case QUEUE_CAPACITY -> HttpStatus.TOO_MANY_REQUESTS;
+            case MESSAGE_TOO_LARGE -> HttpStatus.PAYLOAD_TOO_LARGE;
             case LOCK_TIMEOUT -> HttpStatus.CONFLICT;
             case CONFIGURATION, EXPRESSION -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.SERVICE_UNAVAILABLE;

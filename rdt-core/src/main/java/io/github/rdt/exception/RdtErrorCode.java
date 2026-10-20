@@ -22,6 +22,10 @@ public enum RdtErrorCode {
     INTERRUPTED,
     /** 并发容量或速率配额耗尽。 */
     RATE_LIMITED,
+    /** Reliable queue rejected admission without accepting the message. */
+    QUEUE_CAPACITY,
+    /** Encoded message exceeds the configured byte limit. */
+    MESSAGE_TOO_LARGE,
     /** 序列化或反序列化失败。 */
     SERIALIZATION,
     /** 监听器或调度任务执行失败。 */

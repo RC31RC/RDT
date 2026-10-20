@@ -70,6 +70,15 @@ public class RdtConsistencyAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(JdbcOutboxStore.class)
+    public JdbcOutboxManagement rdtOutboxManagement(DataSource source, PlatformTransactionManager manager,
+                                                    JdbcDialect dialect, KeySpace keys,
+                                                    RdtConsistencyProperties properties) {
+        return new JdbcOutboxManagement(source, manager, dialect, keys.namespace(), properties.schema());
+    }
+
+    @Bean
     @ConditionalOnProperty(prefix = "rdt.consistency", name = "jdbc-dead-letters", havingValue = "true")
     @ConditionalOnMissingBean(FailedMessageStore.class)
     public JdbcFailedMessageStore rdtJdbcDeadLetters(DataSource source, PlatformTransactionManager manager,

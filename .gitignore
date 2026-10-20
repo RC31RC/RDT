@@ -6,12 +6,37 @@
 .env
 .local/
 .pnpm-store/
-/docs/
+!/docs/
+/docs/*
+!/docs/原理与设计.md
 AGENTS.md
 
 # Local test sources and fixtures
-**/src/test/
+**/src/test/**
 
 # Browser test artifacts
 rdt-console/web/test-results/
 rdt-console/web/playwright-report/
+
+# Queue/scheduler resource-bound regression tests accompany their implementations.
+!**/src/test/
+!**/src/test/**/
+!rdt-core/src/test/java/io/github/rdt/DistributedPrimitivesIT.java
+!rdt-core/src/test/java/io/github/rdt/queue/QueuePolicyTest.java
+!rdt-core/src/test/java/io/github/rdt/queue/QueueRuntimeIT.java
+!rdt-core/src/test/java/io/github/rdt/queue/SubscriptionLifecycleTest.java
+!rdt-core/src/test/java/io/github/rdt/redisson/queue/ExecutionBudgetTest.java
+!rdt-core/src/test/java/io/github/rdt/redisson/queue/QueueCapacityAndCleanupIT.java
+!rdt-core/src/test/java/io/github/rdt/redisson/queue/QueueResourceContractTest.java
+!rdt-core/src/test/java/io/github/rdt/redisson/queue/StreamMaintenanceIT.java
+!rdt-core/src/test/java/io/github/rdt/redisson/queue/StreamRetentionTest.java
+!rdt-core/src/test/java/io/github/rdt/redisson/schedule/JobCodecTest.java
+!rdt-core/src/test/java/io/github/rdt/redisson/schedule/ScheduleResourceBoundsIT.java
+!rdt-core/src/test/java/io/github/rdt/redisson/schedule/ScheduleResourceContractTest.java
+!rdt-spring-boot-starter/src/test/java/io/github/rdt/spring/ClusterRuntimeIT.java
+!rdt-spring-boot-starter/src/test/java/io/github/rdt/spring/ClusterScheduleIT.java
+!rdt-spring-boot-starter/src/test/java/io/github/rdt/spring/RuntimeProcessIT.java
+!rdt-spring-boot-starter/src/test/java/io/github/rdt/spring/RuntimeWorkerProcess.java
+!rdt-core/src/test/java/io/github/rdt/management/RedissonManagementQueryServiceTest.java
+!rdt-console/src/test/java/io/github/rdt/console/archive/RedisArchiveReaderIT.java
+!rdt-console/src/test/java/io/github/rdt/console/archive/RedisArchiveClusterIT.java

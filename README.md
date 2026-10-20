@@ -332,8 +332,9 @@ rdt:
     retry-delay: 1s
     max-retry-delay: 1h
     retention: 7d
-    cleanup-time: "03:30"
-    cleanup-jitter: 5m
+    cleanup-interval: 1m
+    cleanup-backlog-delay: 1s
+    cleanup-jitter: 5s
     cleanup-batch-size: 1000
     cleanup-limit: 10000
     cleanup-pause: 100ms
@@ -377,8 +378,11 @@ public class TransactionalOrderConsumer implements RdtMessageConsumer<OrderCreat
 - 每实例一个单线程守护中继，默认 500ms 一轮；batch-size 是单轮预算，逐条认领、发送、及时标记，避免慢消息占掉整批租约。
 - draining、失去节点身份或准入暂停时不再发送新记录；已经开始的网络调用不能强制撤回。
 - 发送成功、标记前崩溃会再次发送，messageId 保持不变，这是至少一次而非 exactly-once。
-- 每日默认按应用进程本地时区 03:30 加 0–5 分钟抖动；取得 namespace 内分布式锁后分批清理并让出数据库连接。
-- 只删超过 7 天的 PUBLISHED Outbox 和 Inbox；不删除 PENDING、CLAIMED、DEAD，也不跨 namespace 清理。
+- 启动后进行首轮清理，正常每轮结束 1 分钟后继续；每次调度附加 0–5 秒抖动。取得 namespace 内分布式锁后才操作数据库。
+- `cleanup-limit` 是每表每轮额度：Outbox 与 Inbox 各 10000 条，交替清理、互不占用额度。任一表用满额度，改为 `cleanup-backlog-delay`（默认 1 秒）后继续，直至本轮不再用满。
+- 每批最多 1000 条，通过一次集合 DELETE 删除；每批独立短事务，批间释放连接并暂停 100ms。额度只限制单轮压力，不再限制每天总吞吐。
+- 每轮日志记录 namespace、两表删除数、额度和 backlog。持续 backlog 表示仍需结合写入量与数据库容量调整参数；不承诺固定最大积压时间。
+- 只删超过 7 天的 PUBLISHED Outbox 和 Inbox；PUBLISHED 表示消息已写入 Redis，不代表所有消费组都已处理。删除 Outbox 行不会删除 Redis Stream 中的消息。不删除 PENDING、CLAIMED、DEAD，也不跨 namespace 清理。
 - 使用自定义 Store 时自动配置不强绑 JDBC 实现；自定义存储的清理由实现方负责。
 
 ### 5.4 可选 JDBC 死信
@@ -396,11 +400,44 @@ rdt:
 
 它替换默认 Redis FailedMessageStore，使用独立短事务保存失败诊断。现有 Console 死信列表/重放读取 Redis，不自动查询 JDBC 死信；不要配置后误以为 Console 能管理数据库中的记录。
 
-### 5.5 尚未提供的能力
+### 5.5 Outbox 最终失败处置
 
-- Console 的 Outbox 分页、统计、DEAD 人工重发接口本轮仍延后；当前没有对应 UI 入口，也没有伪 503 接口。
+`JdbcOutboxManagement` 在业务应用的 JDBC starter 中提供 namespace 限定的分页、详情、DEAD 重发及确认删除能力。Outbox 是业务事务数据库中的投递日志，`DEAD` 是该表的投递状态，不是 Redis 消费死信，也不会被搬入 Redis。宿主业务应用若需要操作入口，应在自己的管理 API 与权限边界内调用该服务；独立 RDT Console 不连接、不查询、不修改业务数据库。
+
+- 列表按状态游标分页，每页最多 200 条，不做全表 COUNT 或深 OFFSET；完整信封按记录单独查询。
+- 重发仅允许指定版本的 DEAD，重置失败预算并转为 PENDING。保留 Outbox ID、原信封和消息 ID，由业务应用内的普通中继再次发送；消费者仍须幂等。
+- 永久删除仅允许明确确认的 DEAD 记录；PENDING、CLAIMED、PUBLISHED 不可通过该操作删除。转 DEAD 与重发递增版本，阻止过期页面对新一轮失败作出决定。
+- 管理 API 的认证、授权、审计及业务 UI 由宿主应用负责。Console 不提供 Outbox 页面，也不接收业务数据库凭据。
+- 建表模板新增 `version`、`dead_at` 和管理分页索引。已有开发库需按新模板手工调整；JDBC 消费死信表仍保留原状，不接入该管理服务的 Outbox 清理逻辑。
+
+### 5.6 尚未提供的能力
+
+- Outbox 的全量统计看板和 DEAD 自动归档/删除策略尚未提供；DEAD 需由业务侧授权操作者处置。
 - 不提供 Outbox 保序、跨库事务、分布式 exactly-once 或业务线程自动中止。
 - MySQL 的判重受 JDBC `CLIENT_FOUND_ROWS` 影响，因此增加 claim marker 核验，而不是只依赖不稳定的影响行数；详见原理文档。
+
+### 5.7 Redis 数据生命周期与容量边界
+
+Inbox/Outbox 是可选 JDBC starter 的业务数据库记录，不放入 Redis。清理器启动后立即尝试一轮；正常一轮结束后等待 1 分钟，再加 0–5 秒随机抖动。若某张表用满每轮 10000 条额度，则改为等待 1 秒再补跑。抖动是各应用节点各自的随机延迟，用来错开 SQL 清理启动时间；namespace 分布式锁保证同一时刻只有一个节点实际清理。它不是每分钟删除最近一分钟的数据，只有超过 7 天的 Inbox 与 PUBLISHED Outbox 符合资格；PENDING、CLAIMED、DEAD 不自动删除。
+
+| Redis 数据 | 当前默认生命周期 | 实际边界 |
+| --- | --- | --- |
+| 在线广播消息（`BROADCAST`） | 不保留 | 通过 Redis Pub/Sub 发送，只面向在线订阅者；离线期间的消息不会排队。 |
+| 普通消息 Stream | 7 天 / 10000 条裁剪目标；另有硬准入 | 裁剪只删除所有组已投递且该 ID 在所有组均非 Pending 的消息；头部 Pending 不阻塞后面的已确认条目。维护在 Redis 内分页扫描，原文不传回 JVM；单次脚本仍有界，积压页连续推进。未投递、Pending 和离线可靠广播组仍受保护。 |
+| 消费组与已确认 Stream 消息 | `auto-delete-after-ack=true` | ACK、重试状态删除和安全 XDEL 合并为同槽 Lua；最后一个组确认时立即释放原文及字节额度，不再依赖每秒 256 条的维护通道。关闭订阅仍保留消费组以支持恢复。 |
+| 延迟消息 | 到期转入 Stream，不自动丢弃 | 与目标 Stream 共用 `max-backlog-messages` / `max-backlog-bytes` 硬额度；到期转移不重复记账。有到期积压时连续搬运，分批和时间预算避免单个脚本长时间阻塞 Redis。 |
+| 队列/任务定义元数据 | 无 TTL | destination 必须稳定，避免按请求动态生成。关闭本地任务只注销 JVM 注册；`ManagementCommandService.retireTask` 才是全局退役，清理 due/管理索引并保留最小 retired tombstone，阻止离线旧节点复活。退役不强制终止已经发生的业务副作用。 |
+| Redis 消费死信 | 默认 30 天 | 每条记录独立 TTL；设置为 0 则永久保留。当前没有总条数/字节数上限，失败速率高时仍可占用大量内存。 |
+| 重试和投递诊断键 | 仅重试期间存在 | 不再写逐消息 delivery 计数键，改用聚合指标。终态 ACK 同时删除失败次数、重试时间、首次失败标记和重试索引成员；崩溃未清理的失败辅助键仍有保护 TTL。 |
+| 调度执行历史/结果 | 默认 7 天且每任务各最多 1000 条 | `max-history-entries` 同时裁剪正文、执行/结果/失败索引。逐条逻辑过期由 expiry 索引判断；正文和所有索引键都有覆盖最晚成员的原生 TTL，停止写入也会自动释放。不是归档后迁移删除。 |
+| 普通缓存 | RDT 默认 5 分钟；NnmBot 配置为 30 分钟 | 可按区域或调用参数覆盖；它才是可丢弃数据。NnmBot 共享世界状态快照有显式 TTL，是跨实例当前状态，不是历史归档。 |
+| 协调与业务共享状态 | 按用途区分 | runtime/owner 租约有 TTL；幂等键使用调用方传入的租约和完成 TTL；限流空闲键默认 1 小时。ID 原子序列、owner fencing 计数、持久 Map/Counter 不设 TTL，不能随意删除或淘汰，否则可能破坏唯一性、旧持有者隔离或业务状态。`SharedStateStore` 必须由调用方提供 TTL；NnmBot 当前世界状态快照默认保留 2 天。 |
+
+因此，Redis 当前不只是缓存：未确认消息、延迟任务和调度协调状态都可能是恢复所必需的数据。长时间待执行任务、审计历史和大体量失败记录更适合业务数据库或归档存储；Redis 只保留运行所需的工作集和短期诊断。不能用无条件 `MAXLEN`/过期来做容量控制，否则可能静默丢掉离线组仍需消费的消息。应另设有界生产准入/告警与明确超限策略，并为长延迟任务选择持久化调度存储。
+
+上述是代码中的逻辑 TTL/裁剪策略，不代表 Redis 服务器实际内存上限、淘汰策略或持久化配置。它们需在 Redis 服务端配置与运行指标中单独核验；不同 logical DB 也不构成内存隔离。
+
+Console 的 Redis 归档默认每天上海时间 02:00 运行，归档文件默认保留 30 天；当前导出范围是 Redis 消费死信和失败/停滞的调度执行，不包括 Outbox 或普通 Stream backlog。归档是旁路复制，不删除 Redis 源记录，也不会延长源 TTL。
 
 ## 6. 集群调度
 
@@ -691,23 +728,52 @@ String correlationId = coalescer.observe(fingerprint, source, eventId,
 | 配置 | 默认 | 含义 |
 | --- | --- | --- |
 | `rdt.queue.max-concurrent-handlers` | 16 | JVM 实际处理上限 |
-| `rdt.queue.local-buffer-capacity` | 32 | 可靠消息本地等待缓冲；不是无界队列 |
+| `rdt.queue.local-buffer-capacity` | 32 | 可靠消息本地等待条数预算 |
+| `rdt.queue.local-buffer-bytes` | 16777216 | 拉取前按最大信封大小保守预留的编码载荷预算，含在途/等待；不是 JVM 总堆上限 |
+| `rdt.queue.max-message-bytes` | 262144 | UTF-8 编码后的完整信封上限，也约束在线广播 |
+| `rdt.queue.max-backlog-messages` | 10000 | 每 destination 的 Stream + 延迟 ZSET 保留条数硬上限；有序消息按 partition 计算 |
+| `rdt.queue.max-backlog-bytes` | 67108864 | 每 destination 保留信封编码字节硬上限，不含 Redis 结构/索引开销 |
 | `rdt.queue.max-blocking-reads` | 4 | 同时阻塞 Redis 读取上限 |
 | `rdt.queue.read-batch-size` | 8 | 单次读取上限，读取前预留槽 |
 | `rdt.queue.poll-timeout` | 2s | 默认长轮询 |
 | `rdt.queue.concurrency` | 1 | 未覆盖监听器并发 |
 | `rdt.queue.max-attempts` | 3 | 已确认失败预算 |
 | `rdt.queue.visibility-timeout` | 30s | Pending 崩溃恢复阈值 |
-| `rdt.queue.stream-retention` / `stream-max-length` | 7d / 10000 | Stream 保留上限，可能淘汰离线组仍需要的数据 |
+| `rdt.queue.stream-retention` / `stream-max-length` | 7d / 10000 | 已完成 Stream 消息裁剪目标；保护未确认数据，不是硬上限 |
 | `rdt.queue.dead-letter-ttl` | 30d | Redis 死信保留时间 |
 | `rdt.schedule.max-concurrent-tasks` | 16 | JVM 调度业务槽位 |
 | `rdt.schedule.poll-interval` / `max-due-per-poll` | 1s / 128 | 调度扫描预算 |
 | `rdt.schedule.worker-lease` | 30s | 派发/执行租约，至少覆盖三次 poll |
-| `rdt.schedule.result-ttl` | 7d | 调度历史与结果保留 |
+| `rdt.schedule.result-ttl` / `max-history-entries` | 7d / 1000 | 时间与数量共同限制；索引和正文均自动过期 |
 | `rdt.lock.wait-time` / `lease-time` | 3s / 0s | 默认等待/watchdog |
 | `rdt.instance.lease` / `renew-interval` | 30s / 5s | 稳定身份租约/续期间隔 |
 
-默认可靠 in-flight 受 16 处理 + 32 缓冲预算约束；listener 自身并发继续叠加约束。节点、job、listener 是不同层次，不能用一个数字替代全部容量。
+默认可靠 in-flight 同时受 16 处理 + 32 缓冲条数预算、16 MiB 编码载荷预算约束；listener 自身并发继续叠加约束。节点、job、listener 是不同层次，不能用一个数字替代全部容量。
+
+容量准入失败同步抛出 `RdtQueueException`，错误码为 `QUEUE_CAPACITY`；超大信封为
+`MESSAGE_TOO_LARGE`，拒绝时不写入消息。普通、可靠广播、有序、延迟发送以及 Console
+死信重投都经过准入；延迟转入 Stream 不新增额度。Console 重投从共享 destination 元数据读取限额，
+没有限额时拒绝，不走无界 XADD。所有生产者应使用一致的限额；直接向 Redis 写入不属于受支持的生产路径。
+Redis 请求超时仍可能已经写入，调用方必须按原有至少一次/幂等边界处理，不能把超时当成明确拒绝。
+
+Pending 恢复只在扫描完整轮且没有可恢复消息后退避；有积压时按可用本地槽连续 claim，
+不再每条等待 `visibility-timeout / 2`。顺序分区只在没有完成进展时短暂退避，成功消息之间没有固定 50ms 休眠。
+正常成功路径保留 watchdog 消息锁、所有权检查和至少一次语义，但把 Pending/重试/失败预算读取、
+ACK/辅助状态清理分别合并为 Lua，消除逐键的串行往返；这不是端到端 exactly-once，也不是完全无逐消息 Redis I/O。
+
+跨节点调度使用有界 JSON 信箱（不反序列化业务可执行对象）；入队与原生 `PEXPIRE` 原子完成，
+TTL 为 `worker-lease`，容量为目标节点调度并发。旧 runId 无 Worker 时也会由 Redis 自动回收，
+持久化 execution 在租约到期后仍可重新派发，旧 token 不能提交结果。
+
+全局退役通过 Console `POST /tasks/{taskId}/retire?namespace=...&confirmed=true` 或
+`ManagementCommandService.retireTask` 显式执行，HTTP 仍要求认证及连接 revision。任务扫描只选
+本节点注册且到期的 ID，不再让全局历史任务消耗候选预算或使用大 OFFSET。
+退役 ID 不能重新注册；tombstone 是刻意保留的最小 fencing 状态，不应当成普通历史记录自动过期。
+
+这些限制按 destination/partition 和 task 生效，不是整个 Redis 实例的总内存配额。大量动态资源、
+死信、缓存和 Redis 元数据仍须单独预算；可靠数据使用 `noeviction`，必要时与缓存分离实例，
+不能靠 LRU 淘汰锁、Pending 或租约。编码载荷上限也不等于 JVM 总内存上限：解码对象、业务副本、
+Netty 接收缓冲及 Redis 外部写入需另外约束。
 
 ### 14.2 压力准入
 

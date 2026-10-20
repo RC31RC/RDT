@@ -28,8 +28,12 @@ public record KeySpace(String namespace) {
     }
 
     private String slotGroup(String feature,String name) {
-        if(feature.equals("stream") || feature.equals("message-delay"))return "queue:"+name;
-        if(feature.equals("message-retries")) {
+        if(feature.equals("stream") || feature.equals("message-delay") || feature.equals("queue-capacity")
+                || feature.equals("queue-capacity-state") || feature.equals("queue-limits")
+                || feature.equals("stream-cleanup-cursor"))return "queue:"+name;
+        if(feature.equals("message-retries") || feature.equals("message-failures")
+                || feature.equals("message-retry-at") || feature.equals("message-delivery")
+                || feature.equals("message-first-failure")) {
             int split=name.indexOf(':');
             RdtSupport.require(split>0,"Invalid queue retry identity");
             return "queue:"+RdtSupport.decodeComponent(name.substring(0,split)).orElseThrow();
@@ -44,6 +48,7 @@ public record KeySpace(String namespace) {
             String job=name.substring(name.indexOf(':')+1);
             return "job:"+job;
         }
+        if(feature.equals("management-index") || feature.equals("management-expiry")) return "management:"+name;
         // Single-key scripts and all Redisson auxiliary keys retain their own independent tag.
         return feature+":"+name;
     }

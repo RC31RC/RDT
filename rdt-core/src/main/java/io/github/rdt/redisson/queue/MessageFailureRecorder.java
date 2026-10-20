@@ -8,6 +8,7 @@ import io.github.rdt.queue.QueuePolicy;
 import io.github.rdt.queue.QueueSubscription;
 import io.github.rdt.runtime.RdtMetrics;
 import io.github.rdt.support.KeySpace;
+import io.github.rdt.support.RdtSupport;
 import java.time.Duration;
 import java.time.Instant;
 import org.redisson.api.RedissonClient;
@@ -24,12 +25,15 @@ final class MessageFailureRecorder {
         this.client=client;this.keys=keys;this.failures=failures;this.instanceId=instanceId;
     }
     String firstFailureKey(QueueSubscription spec, Message message) {
-        return keys.key("message-first-failure",spec.destination()+":"+spec.group()+":"+message.id()
+        return keys.key("message-first-failure",RdtSupport.component(spec.destination())+":"+RdtSupport.component(spec.group())+":"+message.id()
                 +(spec.mode()==QueueMode.BROADCAST ? ":"+instanceId : ""));
     }
     void recordFirstFailure(QueueSubscription spec, Message message, QueuePolicy effective) {
         client.<String>getBucket(firstFailureKey(spec,message),StringCodec.INSTANCE)
                 .setIfAbsent(Instant.now().toString(),attemptsTtl(effective));
+    }
+    void clearFirstFailure(QueueSubscription spec, Message message) {
+        client.getBucket(firstFailureKey(spec, message), StringCodec.INSTANCE).delete();
     }
     void saveFailure(FailedMessage failure, QueuePolicy effective) {
         failures.save(failure,effective.deadLetterTtl());

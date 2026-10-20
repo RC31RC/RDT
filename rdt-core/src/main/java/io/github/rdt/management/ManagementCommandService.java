@@ -19,6 +19,9 @@ public interface ManagementCommandService {
      */
     boolean triggerTask(String taskId);
 
+    /** Globally fence and retire a task ID. A minimal tombstone prevents offline nodes resurrecting it. */
+    boolean retireTask(String taskId);
+
     boolean pauseTask(String taskId, boolean paused);
     boolean drainInstance(String instanceId, boolean draining);
     boolean retryExecution(String taskId, String executionId);

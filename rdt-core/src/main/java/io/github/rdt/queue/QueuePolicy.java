@@ -11,9 +11,13 @@ import java.time.Duration;
  * @param visibilityTimeout Stream 待确认消息恢复前所需的空闲时间
  * @param pollTimeout 阻塞读取等待上限
  * @param shutdownTimeout 中断消费者后的停止等待上限
- * @param autoDeleteAfterAck 是否由周期维护清理所有消费组已确认的消息；ACK 路径仅标记本地状态
- * @param streamRetention Stream 消息最长保留时间；零表示不按时间裁剪
- * @param streamMaxLength Stream 消息数量上限；零表示不按数量裁剪
+ * @param autoDeleteAfterAck 是否在原子 ACK 路径删除所有消费组已确认的原文
+ * @param streamRetention 已完成 Stream 消息的时间裁剪目标；零表示不按时间裁剪，未确认消息不受此目标强制删除
+ * @param streamMaxLength 已完成 Stream 消息的数量裁剪目标；零表示不按数量裁剪，未确认消息不受此目标强制删除
+ * @param maxMessageBytes maximum UTF-8 encoded envelope size
+ * @param maxBacklogMessages hard retained Stream plus delayed count per destination/partition
+ * @param maxBacklogBytes hard retained encoded-envelope bytes per destination/partition, excluding Redis overhead
+ * @param localBufferBytes conservative encoded-payload budget reserved before reads, not total JVM memory
  * @param maxConcurrentHandlers 当前模板共享的业务处理预算
  */
 public record QueuePolicy(int maxAttempts, Duration retryDelay, Duration visibilityTimeout,
@@ -21,9 +25,14 @@ public record QueuePolicy(int maxAttempts, Duration retryDelay, Duration visibil
                           boolean autoDeleteAfterAck, Duration deadLetterTtl,
                           Duration streamRetention, int streamMaxLength,
                           double retryMultiplier, Duration maxRetryDelay,
-                          int maxConcurrentHandlers, int maxBlockingReads, int readBatchSize, int localBufferCapacity) {
+                          int maxConcurrentHandlers, int maxBlockingReads, int readBatchSize, int localBufferCapacity,
+                          int maxMessageBytes, int maxBacklogMessages,
+                          long maxBacklogBytes, int localBufferBytes) {
     /** 校验消息投递配置。 */
     public QueuePolicy {
+        RdtSupport.require(maxMessageBytes > 0 && maxBacklogMessages > 0
+                        && maxBacklogBytes >= maxMessageBytes && localBufferBytes >= maxMessageBytes,
+                "Queue byte and backlog limits must be positive and fit one message");
         RdtSupport.require(localBufferCapacity >= 1 && localBufferCapacity <= 4096,
                 "local buffer capacity must be between 1 and 4096");
         RdtSupport.require(readBatchSize >= 1 && readBatchSize <= 64, "read batch size must be between 1 and 64");
@@ -60,6 +69,6 @@ public record QueuePolicy(int maxAttempts, Duration retryDelay, Duration visibil
                 streamRetention, streamMaxLength,
                 overrides.retryMultiplier() == null ? retryMultiplier : overrides.retryMultiplier(),
                 overrides.maxRetryDelay() == null ? maxRetryDelay : overrides.maxRetryDelay(),
-                maxConcurrentHandlers, maxBlockingReads, readBatchSize, localBufferCapacity);
+                maxConcurrentHandlers, maxBlockingReads, readBatchSize, localBufferCapacity, maxMessageBytes, maxBacklogMessages, maxBacklogBytes, localBufferBytes);
     }
 }

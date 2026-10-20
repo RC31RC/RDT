@@ -4,7 +4,7 @@ import io.github.rdt.queue.Subscription;
 import java.util.List;
 import java.util.concurrent.Callable;
 
-/** 支持集群协调的 Bean 调度，以及显式的持久化 Redisson 执行器传输。 */
+/** 支持集群协调的 Bean 调度，通过有界且自动过期的 JSON 信箱进行跨节点派发。 */
 public interface ScheduledTaskTemplate {
     /**
      * 注册参与共享调度的本地可调用任务。

@@ -70,14 +70,20 @@ final class OrderedPartitionSubscriptionRuntime extends SubscriptionRuntime {
         String consumer = identity.instanceId() + ":" + identity.runId() + ":p" + start;
         QueuePolicy effective = policy.resolve(spec.options());
         int partition = start % spec.orderedPartitions();
+        long idleMillis = 10;
         while (active.get() && !Thread.currentThread().isInterrupted()) {
             try {
+                boolean progressed = false;
                 if (!identity.acceptingNewWork()) {
                     Thread.sleep(effective.pollTimeout());
                     continue;
                 }
-                budget.reserve();
+                budget.acquireRead();
+                boolean readPermit = true;
+                boolean reserved = false;
                 try {
+                    budget.reserve();
+                    reserved = true;
                     QueueSubscription channel = partitionSpec(spec, partition);
                     var owner =
                             locks.tryLock(
@@ -95,7 +101,8 @@ final class OrderedPartitionSubscriptionRuntime extends SubscriptionRuntime {
                                             1);
                             if (!pending.isEmpty()) {
                                 // An unresolved head blocks the whole partition, including its
-                                // retry backoff.
+                                // retry backoff. A watchdog can expire during a long process pause;
+                                // the owner guard cannot undo already-issued external side effects.
                                 var recovered =
                                         target.autoClaim(
                                                 channel.group(),
@@ -105,7 +112,9 @@ final class OrderedPartitionSubscriptionRuntime extends SubscriptionRuntime {
                                                 StreamMessageId.ALL,
                                                 1);
                                 for (var entry : recovered.getMessages().entrySet()) {
-                                    processOrdered(
+                                    budget.releaseRead();
+                                    readPermit = false;
+                                    progressed = processOrdered(
                                             channel,
                                             effective,
                                             target,
@@ -115,19 +124,12 @@ final class OrderedPartitionSubscriptionRuntime extends SubscriptionRuntime {
                                             handle::isHeld);
                                 }
                             } else {
-                                var fresh =
-                                        budget.read(
-                                                () ->
-                                                        target.readGroup(
-                                                                channel.group(),
-                                                                consumer,
-                                                                StreamReadGroupArgs.neverDelivered()
-                                                                        .count(1)
-                                                                        .timeout(
-                                                                                effective
-                                                                                        .pollTimeout())));
+                                var fresh = target.readGroup(channel.group(), consumer,
+                                        StreamReadGroupArgs.neverDelivered().count(1).timeout(effective.pollTimeout()));
                                 for (var entry : fresh.entrySet()) {
-                                    processOrdered(
+                                    budget.releaseRead();
+                                    readPermit = false;
+                                    progressed = processOrdered(
                                             channel,
                                             effective,
                                             target,
@@ -140,10 +142,15 @@ final class OrderedPartitionSubscriptionRuntime extends SubscriptionRuntime {
                         }
                     }
                 } finally {
-                    budget.release(1);
+                    if (readPermit) budget.releaseRead();
+                    if (reserved) budget.release(1);
                 }
                 partition = (partition + 1) % spec.orderedPartitions();
-                Thread.sleep(50);
+                if (progressed) idleMillis = 10;
+                else {
+                    Thread.sleep(idleMillis);
+                    idleMillis = Math.min(100, idleMillis * 2);
+                }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } catch (Exception error) {
@@ -160,7 +167,7 @@ final class OrderedPartitionSubscriptionRuntime extends SubscriptionRuntime {
         }
     }
 
-    private void processOrdered(
+    private boolean processOrdered(
             QueueSubscription spec,
             QueuePolicy effective,
             RStream<String, String> target,
@@ -171,7 +178,7 @@ final class OrderedPartitionSubscriptionRuntime extends SubscriptionRuntime {
             throws InterruptedException {
         budget.acquireHandler();
         try {
-            lifecycle.processStream(spec, effective, target, id, data, handler, owner);
+            return lifecycle.processStream(spec, effective, target, id, data, handler, owner);
         } finally {
             budget.releaseHandler();
         }

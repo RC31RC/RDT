@@ -5,9 +5,12 @@ import io.github.rdt.consistency.InboxScope;
 import io.github.rdt.consistency.InboxStore;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.Collections;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -20,6 +23,7 @@ public final class JdbcInboxStore implements InboxStore {
     public JdbcInboxStore(DataSource source, PlatformTransactionManager manager, JdbcDialect dialect, String schema) {
         this.source=source; jdbc=new JdbcTemplate(source); this.dialect=dialect;
         table=dialect.table(schema,"rdt_inbox"); cleanupTransaction=new TransactionTemplate(manager);
+        cleanupTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
     @Override
     public boolean register(InboxScope scope) {
@@ -48,10 +52,15 @@ public final class JdbcInboxStore implements InboxStore {
                 var ids=jdbc.query("SELECT message_id,consumer_group FROM " + table + " WHERE namespace=? AND consumed_at<"
                         + dialect.plusMillis() + " ORDER BY consumed_at LIMIT ? FOR UPDATE SKIP LOCKED",
                         (rs,i) -> new InboxScope(namespace,rs.getString(1),rs.getString(2)),namespace,-retention.toMillis(),limit);
-                int count=0;
-                for (InboxScope id:ids) count+=jdbc.update("DELETE FROM " + table
-                        + " WHERE namespace=? AND message_id=? AND consumer_group=?",namespace,id.messageId(),id.consumerGroup());
-                return count;
+                if (ids.isEmpty()) return 0;
+                var parameters = new ArrayList<Object>();
+                parameters.add(namespace);
+                for (InboxScope id : ids) {
+                    parameters.add(id.messageId());
+                    parameters.add(id.consumerGroup());
+                }
+                return jdbc.update("DELETE FROM " + table + " WHERE namespace=? AND (message_id,consumer_group) IN ("
+                        + String.join(",", Collections.nCopies(ids.size(), "(?,?)")) + ")", parameters.toArray());
             });
         
         });

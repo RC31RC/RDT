@@ -104,7 +104,7 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
                         retryClassifier);
         budget = new ExecutionBudget(policy);
         streams = new QueueStreams(client, keys);
-        producer = new QueueProducer(client, keys, json, identity, retention, streams, closed);
+        producer = new QueueProducer(client, keys, json, identity, retention, streams, closed, policy);
         transfer.scheduleWithFixedDelay(
                 () -> {
                     try {
@@ -114,9 +114,9 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
                         if (!closed.get()) log.warn("Queue maintenance failed", error);
                     }
                 },
-                1,
-                1,
-                TimeUnit.SECONDS);
+                100,
+                100,
+                TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -192,9 +192,10 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
         if (effective.orderedPartitions() > 0) {
             streams.registerPartitions(effective.destination(), effective.orderedPartitions());
             for (int partition = 0; partition < effective.orderedPartitions(); partition++) {
+                String destination = streams.partitionTopic(effective.destination(), partition);
                 streams.createGroup(
                         new QueueSubscription(
-                                streams.partitionTopic(effective.destination(), partition),
+                                destination,
                                 QueueMode.STREAM,
                                 effective.group(),
                                 1,
@@ -202,9 +203,11 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
                                 effective.options(),
                                 0,
                                 effective.listenerId() + ":" + partition));
+                retention.trimStream(streams.stream(destination), destination);
             }
         } else if (effective.mode() != QueueMode.BROADCAST) {
             streams.createGroup(effective);
+            retention.trimStream(streams.stream(effective.destination()), effective.destination());
         }
         SubscriptionRuntime runtime =
                 effective.orderedPartitions() > 0
@@ -289,7 +292,8 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
         try {
             subscriptions.forEach(Subscription::close);
         } finally {
-            budget.close();
+            try { producer.close(); }
+            finally { budget.close(); }
         }
     }
 }

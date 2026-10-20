@@ -65,13 +65,17 @@ final class StreamBatchSubscriptionRuntime extends SubscriptionRuntime {
         try {
             while (active.get() && !Thread.currentThread().isInterrupted()) {
                 int reserved = 0;
+                boolean readPermit = false;
                 try {
                     if (!identity.acceptingNewWork()) {
                         Thread.sleep(effective.pollTimeout());
                         continue;
                     }
+                    // Readers waiting for a Redis connection must not pre-reserve payload slots.
                     listenerSlots.acquire();
                     try {
+                        budget.acquireRead();
+                        readPermit = true;
                         budget.reserve();
                     } catch (InterruptedException error) {
                         listenerSlots.release();
@@ -117,24 +121,20 @@ final class StreamBatchSubscriptionRuntime extends SubscriptionRuntime {
                                                             "result",
                                                             "claimed"));
                         }
-                        nextRecovery =
-                                System.nanoTime()
+                        nextRecovery = recovered.isEmpty() && cursor.equals("-")
+                                ? System.nanoTime()
                                         + Math.max(
                                                 TimeUnit.MILLISECONDS.toNanos(100),
-                                                effective.visibilityTimeout().toNanos() / 2);
+                                                effective.visibilityTimeout().toNanos() / 2) : 0;
                     }
+                    if (leader && batch.isEmpty() && !cursor.equals("-")) continue;
                     if (batch.isEmpty()) {
                         int count = reserved;
-                        batch =
-                                budget.read(
-                                        () ->
-                                                target.readGroup(
-                                                        spec.group(),
-                                                        consumer,
-                                                        StreamReadGroupArgs.neverDelivered()
-                                                                .count(count)
-                                                                .timeout(effective.pollTimeout())));
+                        batch = target.readGroup(spec.group(), consumer,
+                                StreamReadGroupArgs.neverDelivered().count(count).timeout(effective.pollTimeout()));
                     }
+                    budget.releaseRead();
+                    readPermit = false;
                     for (var entry : batch.entrySet()) {
                         if (!active.get() || !identity.accepting()) break;
                         budget.enqueue(
@@ -168,6 +168,7 @@ final class StreamBatchSubscriptionRuntime extends SubscriptionRuntime {
                         log.warn("Stream read failed topic={}", spec.destination(), failure);
                     pause(Duration.ofSeconds(1));
                 } finally {
+                    if (readPermit) budget.releaseRead();
                     if (reserved > 0) {
                         budget.release(reserved);
                         listenerSlots.release(reserved);

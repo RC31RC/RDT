@@ -29,7 +29,8 @@ final class ExecutionBudget implements AutoCloseable {
     ExecutionBudget(QueuePolicy policy) {
         shutdownTimeout = policy.shutdownTimeout();
         inFlight =
-                new Semaphore(policy.maxConcurrentHandlers() + policy.localBufferCapacity(), true);
+                new Semaphore(Math.min(policy.maxConcurrentHandlers() + policy.localBufferCapacity(),
+                        policy.localBufferBytes() / policy.maxMessageBytes()), true);
         handlers = new Semaphore(policy.maxConcurrentHandlers(), true);
         reads = new Semaphore(policy.maxBlockingReads(), true);
         buffer = new ArrayBlockingQueue<>(policy.localBufferCapacity(), true);
@@ -40,8 +41,8 @@ final class ExecutionBudget implements AutoCloseable {
         inFlight.acquire();
     }
 
-    boolean tryReserve() throws InterruptedException {
-        return inFlight.tryAcquire(0, TimeUnit.NANOSECONDS);
+    boolean tryReserve() {
+        return inFlight.tryAcquire();
     }
 
     void release(int count) {
@@ -67,6 +68,10 @@ final class ExecutionBudget implements AutoCloseable {
     Future<?> submit(Runnable work) {
         return workers.submit(work);
     }
+
+    void acquireRead() throws InterruptedException { reads.acquire(); }
+
+    void releaseRead() { reads.release(); }
 
     <T> T read(Callable<T> operation) throws Exception {
         reads.acquire();

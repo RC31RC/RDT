@@ -152,8 +152,8 @@ public record RdtProperties(
      * @param shutdownTimeout 本地工作线程停止等待上限
      * @param autoDeleteAfterAck 所有消费组确认后是否自动删除 Stream 原文
      * @param deadLetterTtl 死信记录最长保留时间；零表示不自动过期
-     * @param streamRetention Stream 消息最长保留时间；零表示不按时间裁剪
-     * @param streamMaxLength Stream 消息数量上限；零表示不按数量裁剪
+     * @param streamRetention 已完成 Stream 消息的时间裁剪目标；零表示不按时间裁剪，未确认消息不受此目标强制删除
+     * @param streamMaxLength 已完成 Stream 消息的数量裁剪目标；零表示不按数量裁剪，未确认消息不受此目标强制删除
      * @param retryMultiplier 指数退避倍率；一表示固定退避
      * @param maxRetryDelay 单次重试退避上限
      * @param concurrency 未在监听器中覆盖时的本地并发默认值
@@ -193,12 +193,20 @@ public record RdtProperties(
             @DefaultValue("8")
             int readBatchSize,
             @DefaultValue("32")
-            int localBufferCapacity) {
+            int localBufferCapacity,
+            @DefaultValue("262144")
+            int maxMessageBytes,
+            @DefaultValue("10000")
+            int maxBacklogMessages,
+            @DefaultValue("67108864")
+            long maxBacklogBytes,
+            @DefaultValue("16777216")
+            int localBufferBytes) {
         @ConstructorBinding
         public Queue {
             new QueuePolicy(maxAttempts, retryDelay, visibilityTimeout, pollTimeout, shutdownTimeout,
                     autoDeleteAfterAck, deadLetterTtl, streamRetention, streamMaxLength,
-                    retryMultiplier, maxRetryDelay, maxConcurrentHandlers, maxBlockingReads, readBatchSize, localBufferCapacity);
+                    retryMultiplier, maxRetryDelay, maxConcurrentHandlers, maxBlockingReads, readBatchSize, localBufferCapacity, maxMessageBytes, maxBacklogMessages, maxBacklogBytes, localBufferBytes);
             RdtSupport.require(concurrency >= 1 && concurrency <= 256, "Invalid listener concurrency");
             RdtSupport.require(maxConcurrentHandlers >= 1 && maxConcurrentHandlers <= 256,
                     "Invalid global message handler capacity");
@@ -211,7 +219,7 @@ public record RdtProperties(
         public QueuePolicy policy() {
             return new QueuePolicy(maxAttempts, retryDelay, visibilityTimeout, pollTimeout, shutdownTimeout,
                     autoDeleteAfterAck, deadLetterTtl, streamRetention, streamMaxLength,
-                    retryMultiplier, maxRetryDelay, maxConcurrentHandlers, maxBlockingReads, readBatchSize, localBufferCapacity);
+                    retryMultiplier, maxRetryDelay, maxConcurrentHandlers, maxBlockingReads, readBatchSize, localBufferCapacity, maxMessageBytes, maxBacklogMessages, maxBacklogBytes, localBufferBytes);
         }
 
     }
@@ -268,10 +276,13 @@ public record RdtProperties(
             @DefaultValue("128")
             int maxDuePerPoll,
             @DefaultValue("30s")
-            Duration workerLease) {
+            Duration workerLease,
+            @DefaultValue("1000")
+            int maxHistoryEntries) {
         /** 校验时长和容量。 */
         @ConstructorBinding
         public Schedule {
+            RdtSupport.require(maxHistoryEntries > 0 && maxHistoryEntries <= 1000000, "Invalid history entry limit");
             RdtSupport.positive(workerLease, "schedule worker lease");
             RdtSupport.require(workerLease.compareTo(pollInterval.multipliedBy(3)) >= 0,
                     "schedule worker-lease must cover at least three poll intervals");
@@ -288,7 +299,7 @@ public record RdtProperties(
         }
 
         public SchedulerSettings settings() {
-            return new SchedulerSettings(pollInterval,resultTtl,shutdownTimeout,maxConcurrentTasks,maxDuePerPoll,workerLease,policy());
+            return new SchedulerSettings(pollInterval,resultTtl,shutdownTimeout,maxConcurrentTasks,maxDuePerPoll,workerLease,policy(),maxHistoryEntries);
         }
 
         public SchedulePolicy policy() {

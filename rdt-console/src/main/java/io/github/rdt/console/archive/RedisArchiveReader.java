@@ -63,7 +63,7 @@ public final class RedisArchiveReader implements RdtArchiveJob.Source {
         scan("schedule-executions", (key, namespace, jobId) -> {
             KeySpace keys = new KeySpace(namespace);
             JobExecution current = currentExecution(keys.key("schedule-state", jobId));
-            scanCache(key, (field, value) -> {
+            scanHistory(key, keys.key("schedule-execution-expiry", jobId), (field, value) -> {
                 JobExecution execution = json.read(value, JobExecution.class);
                 // Current state is authoritative; its separate scan also covers a crash before history persistence.
                 if (current == null || !current.executionId().equals(execution.executionId())) {
@@ -123,6 +123,28 @@ public final class RedisArchiveReader implements RdtArchiveJob.Source {
             String name = keys.nameFromKey(feature, key).orElse(null);
             if (name != null && keys.key(feature, name).equals(key)) consumer.accept(key, namespace, name);
         }
+    }
+
+    private void scanHistory(String key, String expiry, RecordConsumer consumer) {
+        String cursor = "0";
+        do {
+            checkInterrupted();
+            List<Object> page = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_ONLY, """
+                    local page = redis.call('HSCAN', KEYS[1], ARGV[1], 'COUNT', ARGV[2])
+                    local result = {page[1]}
+                    local t = redis.call('TIME'); local now = t[1]*1000+math.floor(t[2]/1000)
+                    for i = 1, #page[2], 2 do
+                      local expires = redis.call('ZSCORE', KEYS[2], page[2][i])
+                      if expires and tonumber(expires) > now then
+                        table.insert(result, page[2][i]); table.insert(result, page[2][i+1])
+                      end
+                    end
+                    return result
+                    """, RScript.ReturnType.LIST, List.of(key, expiry), cursor, BATCH_SIZE);
+            cursor = (String) page.getFirst();
+            for (int i = 1; i < page.size(); i += 2)
+                consumer.accept((String) page.get(i), (String) page.get(i+1));
+        } while (!"0".equals(cursor));
     }
 
     private void scanCache(String key, RecordConsumer consumer) {

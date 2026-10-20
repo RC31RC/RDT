@@ -6,6 +6,8 @@ CREATE TABLE rdt_outbox (
  envelope TEXT NOT NULL,
  status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
  failure_count INTEGER NOT NULL DEFAULT 0,
+ version BIGINT NOT NULL DEFAULT 0,
+ dead_at TIMESTAMP WITH TIME ZONE,
  available_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
  owner VARCHAR(512),
  claim_token VARCHAR(36),
@@ -34,3 +36,9 @@ COMMENT ON COLUMN rdt_outbox.claim_until IS 'Database-clock claim expiry';
 COMMENT ON COLUMN rdt_outbox.last_error IS 'Bounded failure diagnostic';
 COMMENT ON COLUMN rdt_outbox.created_at IS 'Database creation time';
 COMMENT ON COLUMN rdt_outbox.published_at IS 'Successful relay acknowledgement time';
+
+-- Bound status-filtered keyset management pages within one namespace.
+CREATE INDEX rdt_outbox_management ON rdt_outbox(namespace,status,created_at,id);
+
+COMMENT ON COLUMN rdt_outbox.version IS 'Fences stale DEAD management actions across manual retries';
+COMMENT ON COLUMN rdt_outbox.dead_at IS 'Database time when relay exhausted its failure budget';

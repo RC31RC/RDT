@@ -2,6 +2,7 @@ package io.github.rdt.redisson.queue;
 
 import io.github.rdt.queue.Message;
 import io.github.rdt.queue.QueueMode;
+import io.github.rdt.queue.QueuePolicy;
 import io.github.rdt.redisson.support.RedisSupport;
 import io.github.rdt.runtime.RuntimeIdentity;
 import io.github.rdt.support.JsonCodec;
@@ -11,7 +12,6 @@ import io.github.rdt.support.RdtSupport;
 import org.redisson.api.RScript;
 import org.redisson.api.RStream;
 import org.redisson.api.RedissonClient;
-import org.redisson.api.stream.StreamAddArgs;
 import org.redisson.client.codec.StringCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +33,8 @@ final class QueueProducer {
     private final StreamRetention retention;
     private final QueueStreams streams;
     private final AtomicBoolean closed;
+    private final QueueAdmission admission;
+    private final DelayTransferCoordinator delayLeader;
     private final AtomicInteger delayCursor = new AtomicInteger();
 
     QueueProducer(
@@ -42,7 +44,9 @@ final class QueueProducer {
             RuntimeIdentity identity,
             StreamRetention retention,
             QueueStreams streams,
-            AtomicBoolean closed) {
+            AtomicBoolean closed, QueuePolicy policy) {
+        admission = new QueueAdmission(client, keys, policy);
+        delayLeader = new DelayTransferCoordinator(client, keys, identity);
         this.client = client;
         this.keys = keys;
         this.json = json;
@@ -59,10 +63,11 @@ final class QueueProducer {
                 "send message",
                 () -> {
                     String encoded = json.write(message);
+                    admission.validate(encoded);
                     switch (mode) {
                         case STREAM, RELIABLE_BROADCAST -> {
                             RStream<String, String> target = streams.stream(destination);
-                            target.add(StreamAddArgs.entry("message", encoded));
+                            admission.accept(destination, encoded, null);
                             retention.trimStream(target, destination);
                         }
                         case BROADCAST ->
@@ -83,12 +88,14 @@ final class QueueProducer {
         RedisSupport.redisRun(
                 "send JSON envelope",
                 () -> {
+                    String encoded = json.write(message);
+                    admission.validate(encoded);
                     if (mode == QueueMode.BROADCAST) {
                         client.getTopic(keys.key("topic", destination), StringCodec.INSTANCE)
-                                .publish(json.write(message));
+                                .publish(encoded);
                     } else {
                         RStream<String, String> target = streams.stream(destination);
-                        target.add(StreamAddArgs.entry("message", json.write(message)));
+                        admission.accept(destination, encoded, null);
                         retention.trimStream(target, destination);
                     }
                 });
@@ -103,8 +110,7 @@ final class QueueProducer {
         // accepted message.
         client.<String>getScoredSortedSet(keys.key("delay-topics", "topics"), StringCodec.INSTANCE)
                 .add(0, destination);
-        client.<String>getScoredSortedSet(delayKey(destination), StringCodec.INSTANCE)
-                .add(System.currentTimeMillis() + delay.toMillis(), json.write(message));
+        admission.accept(destination, json.write(message), System.currentTimeMillis() + delay.toMillis());
         return message.id();
     }
 
@@ -126,8 +132,9 @@ final class QueueProducer {
                         orderingKey,
                         orderingKey,
                         Map.of());
-        streams.stream(streams.partitionTopic(topic, partition))
-                .add(StreamAddArgs.entry("message", json.write(message)));
+        String destination = streams.partitionTopic(topic, partition);
+        admission.accept(destination, json.write(message), null);
+        retention.trimStream(streams.stream(destination), destination);
         return message.id();
     }
 
@@ -137,33 +144,49 @@ final class QueueProducer {
     }
 
     void transferDelayed() {
-        if (closed.get() || !identity.accepting()) return;
-        int offset = delayCursor.get();
-        var topics =
-                client.<String>getScoredSortedSet(
-                                keys.key("delay-topics", "topics"), StringCodec.INSTANCE)
-                        .valueRange(offset, offset + 63);
-        delayCursor.set(topics.size() < 64 ? 0 : offset + 64);
-        for (String topic : topics) {
-            try {
-                client.getScript(StringCodec.INSTANCE)
-                        .eval(
-                                RScript.Mode.READ_WRITE,
-                                """
-local t = redis.call('TIME')
-local now = t[1] * 1000 + math.floor(t[2] / 1000)
-local due = redis.call('zrangebyscore', KEYS[1], '-inf', now, 'LIMIT', 0, 64)
-for _, value in ipairs(due) do
-  redis.call('xadd', KEYS[2], '*', 'message', value)
-  redis.call('zrem', KEYS[1], value)
-end
-return #due
-""",
-                                RScript.ReturnType.LONG,
-                                List.of(delayKey(topic), streams.stream(topic).getName()));
-            } catch (RuntimeException error) {
-                log.warn("Reliable delay transfer failed topic={}", topic, error);
+        if (closed.get() || !identity.accepting() || !delayLeader.isLeader()) return;
+        long deadline = System.nanoTime() + 50_000_000L;
+        do {
+            int offset = delayCursor.get();
+            var topics = client.<String>getScoredSortedSet(
+                    keys.key("delay-topics", "topics"), StringCodec.INSTANCE).valueRange(offset, offset + 63);
+            delayCursor.set(topics.size() < 64 ? 0 : offset + 64);
+            for (String topic : topics) {
+                try {
+                    Number moved;
+                    do {
+                        moved = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, """
+                                local t = redis.call('TIME')
+                                local now = t[1] * 1000 + math.floor(t[2] / 1000)
+                                local due = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now, 'LIMIT', 0, 256)
+                                for _, value in ipairs(due) do
+                                  redis.call('XADD', KEYS[2], '*', 'message', value)
+                                  redis.call('ZREM', KEYS[1], value)
+                                end
+                                if #due > 0 then
+                                  redis.call('HINCRBY', KEYS[4], 'delay', -#due)
+                                  redis.call('HINCRBY', KEYS[4], 'stream', #due)
+                                end
+                                return #due
+                                """, RScript.ReturnType.LONG,
+                                List.of(delayKey(topic), streams.stream(topic).getName(),
+                                        keys.key("queue-capacity", topic),
+                                        keys.key("queue-capacity-state", topic)));
+                    } while (moved.intValue() == 256 && System.nanoTime() < deadline && !closed.get());
+                    retention.trimStream(streams.stream(topic), topic);
+                } catch (RuntimeException error) {
+                    log.warn("Reliable delay transfer failed topic={}", topic, error);
+                }
             }
+            if (topics.size() < 64) break;
+        } while (System.nanoTime() < deadline && !closed.get());
+    }
+
+    void close() {
+        try {
+            delayLeader.close();
+        } catch (RuntimeException error) {
+            log.debug("Delayed transfer lease release failed during shutdown", error);
         }
     }
 }

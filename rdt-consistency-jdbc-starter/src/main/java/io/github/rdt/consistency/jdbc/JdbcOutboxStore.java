@@ -11,6 +11,8 @@ import io.github.rdt.support.JsonCodec;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.Collections;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -90,7 +92,7 @@ public final class JdbcOutboxStore implements OutboxStore {
     public void markDead(OutboxRecord row, String error) {
         JdbcSupport.execute("markDead JdbcOutboxStore", () -> {
             shortTransaction.executeWithoutResult(status -> jdbc.update("UPDATE " + table
-                    + " SET status='DEAD',failure_count=failure_count+1,last_error=?,claim_until=NULL,owner=NULL,claim_token=NULL WHERE namespace=? AND id=? AND status='CLAIMED' AND claim_token=? AND claim_until>CURRENT_TIMESTAMP",
+                    + " SET status='DEAD',failure_count=failure_count+1,version=version+1,dead_at=CURRENT_TIMESTAMP,last_error=?,claim_until=NULL,owner=NULL,claim_token=NULL WHERE namespace=? AND id=? AND status='CLAIMED' AND claim_token=? AND claim_until>CURRENT_TIMESTAMP",
                     bounded(error), row.namespace(), row.id(), row.claimToken()));
         
         });
@@ -118,9 +120,12 @@ public final class JdbcOutboxStore implements OutboxStore {
                 List<String> ids = jdbc.queryForList("SELECT id FROM " + table
                         + " WHERE namespace=? AND status='PUBLISHED' AND published_at<" + dialect.plusMillis()
                         + " ORDER BY published_at LIMIT ? FOR UPDATE SKIP LOCKED", String.class, namespace, -retention.toMillis(), limit);
-                int count=0;
-                for (String id : ids) count += jdbc.update("DELETE FROM " + table + " WHERE namespace=? AND id=? AND status='PUBLISHED'", namespace,id);
-                return count;
+                if (ids.isEmpty()) return 0;
+                var parameters = new ArrayList<Object>();
+                parameters.add(namespace);
+                parameters.addAll(ids);
+                return jdbc.update("DELETE FROM " + table + " WHERE namespace=? AND status='PUBLISHED' AND id IN ("
+                        + String.join(",", Collections.nCopies(ids.size(), "?")) + ")", parameters.toArray());
             });
         
         });
