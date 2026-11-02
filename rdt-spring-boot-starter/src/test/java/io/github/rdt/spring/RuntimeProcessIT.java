@@ -43,13 +43,16 @@ class RuntimeProcessIT {
         try {
             for (String instance : List.of("worker-a", "worker-b")) {
                 Path log = Files.createTempFile("rdt-" + instance, ".log");
-                processes.add(new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                        "-Xmx192m", "-cp", System.getProperty("java.class.path"), RuntimeWorkerProcess.class.getName(),
-                        address, keys.namespace(), instance).redirectErrorStream(true).redirectOutput(log.toFile()).start());
+                processes.add(
+                    new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-Xmx192m",
+                        "-cp", System.getProperty("java.class.path"), RuntimeWorkerProcess.class.getName(), address,
+                        keys.namespace(), instance).redirectErrorStream(true).redirectOutput(log.toFile()).start());
             }
             await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
-                assertThat(client.getBucket(keys.key("test-ready", "worker-a"), StringCodec.INSTANCE).get()).isNotNull();
-                assertThat(client.getBucket(keys.key("test-ready", "worker-b"), StringCodec.INSTANCE).get()).isNotNull();
+                assertThat(client.getBucket(keys.key("test-ready", "worker-a"), StringCodec.INSTANCE).get())
+                    .isNotNull();
+                assertThat(client.getBucket(keys.key("test-ready", "worker-b"), StringCodec.INSTANCE).get())
+                    .isNotNull();
                 assertThat(processes).allMatch(Process::isAlive);
             });
             JsonCodec json = new JsonCodec();
@@ -59,8 +62,8 @@ class RuntimeProcessIT {
             await().atMost(Duration.ofSeconds(6)).untilAsserted(() -> assertThat(queries.instances()).hasSize(2));
             Path duplicateLog = Files.createTempFile("rdt-duplicate-identity", ".log");
             Process duplicate = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                    "-Xmx192m", "-cp", System.getProperty("java.class.path"), RuntimeWorkerProcess.class.getName(),
-                    address, keys.namespace(), "worker-a").redirectErrorStream(true).redirectOutput(duplicateLog.toFile()).start();
+                "-Xmx192m", "-cp", System.getProperty("java.class.path"), RuntimeWorkerProcess.class.getName(), address,
+                keys.namespace(), "worker-a").redirectErrorStream(true).redirectOutput(duplicateLog.toFile()).start();
             processes.add(duplicate);
             assertThat(duplicate.waitFor(15, TimeUnit.SECONDS)).isTrue();
             assertThat(duplicate.exitValue()).isNotZero();
@@ -68,16 +71,21 @@ class RuntimeProcessIT {
             assertThat(queries.instances()).hasSize(2);
             assertThat(json.write(queries.instances())).doesNotContain("leaseToken");
             assertThat(commands.triggerTask("routed-job")).isTrue();
-            await().atMost(Duration.ofSeconds(12)).untilAsserted(() ->
-                    assertThat(client.getList(keys.key("test-results", "routed"), StringCodec.INSTANCE).readAll())
-                            .singleElement().asString().startsWith("worker-b:"));
-            var policy = new QueuePolicy(3, Duration.ofMillis(600), Duration.ofMillis(500), Duration.ofMillis(250), Duration.ofSeconds(2), false, Duration.ofMinutes(5), Duration.ZERO, 0, 1, Duration.ofSeconds(3), 16, 4, 8, 32, 262144, 10000, 67108864L, 16777216);
-            try (var producer = new RedissonMessageQueueTemplate(client, keys, json, policy, locks, failure -> { }, new RuntimeIdentity(null), RetryClassifier.infrastructureFailures())) {
+            await().atMost(Duration.ofSeconds(12)).untilAsserted(
+                () -> assertThat(client.getList(keys.key("test-results", "routed"), StringCodec.INSTANCE).readAll())
+                    .singleElement().asString().startsWith("worker-b:"));
+            var policy = new QueuePolicy(3, Duration.ofMillis(600), Duration.ofMillis(500), Duration.ofMillis(250),
+                Duration.ofSeconds(2), false, Duration.ofMinutes(5), Duration.ZERO, 0, 1, Duration.ofSeconds(3), 16, 4,
+                8, 32, 262144, 10000, 67108864L, 16777216);
+            try (var producer = new RedissonMessageQueueTemplate(client, keys, json, policy, locks, failure -> {
+            }, new RuntimeIdentity(null), RetryClassifier.infrastructureFailures())) {
                 var sentIds = new HashSet<String>();
-                for (int i = 0; i < 24; i++) sentIds.add(producer.send("competing", "message-" + i));
-                await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
-                        assertThat(client.getList(keys.key("test-results", "competing"), StringCodec.INSTANCE).readAll())
-                                .containsExactlyInAnyOrderElementsOf(sentIds));
+                for (int i = 0; i < 24; i++)
+                    sentIds.add(producer.send("competing", "message-" + i));
+                await().atMost(Duration.ofSeconds(10))
+                    .untilAsserted(() -> assertThat(
+                        client.getList(keys.key("test-results", "competing"), StringCodec.INSTANCE).readAll())
+                        .containsExactlyInAnyOrderElementsOf(sentIds));
                 producer.sendOrdered("ordered", "A", "A1", 2);
                 producer.sendOrdered("ordered", "A", "A2", 2);
                 producer.sendOrdered("ordered", "B-key", "B1", 2);
@@ -88,39 +96,44 @@ class RuntimeProcessIT {
                     assertThat(events.indexOf("A2")).isGreaterThan(events.indexOf("A1"));
                     assertThat(events.indexOf("B1")).isLessThan(events.indexOf("A2"));
                     assertThat(client.getList(keys.key("test-results", "broadcast"), StringCodec.INSTANCE).readAll())
-                            .containsExactlyInAnyOrder("worker-a", "worker-b");
+                        .containsExactlyInAnyOrder("worker-a", "worker-b");
                 });
             }
             String pendingId;
-            try (var producer = new RedissonMessageQueueTemplate(client, keys, json, policy, locks, failure -> { }, new RuntimeIdentity(null), RetryClassifier.infrastructureFailures())) {
+            try (var producer = new RedissonMessageQueueTemplate(client, keys, json, policy, locks, failure -> {
+            }, new RuntimeIdentity(null), RetryClassifier.infrastructureFailures())) {
                 pendingId = producer.send("crash-pending", "recover-me");
             }
-            await().atMost(Duration.ofSeconds(12)).until(() ->
-                    client.getAtomicLong(keys.key("test-count", "pending-crash")).get() == 1);
-            String queueOwner = client.<String>getBucket(keys.key("test-owner", "pending-crash"), StringCodec.INSTANCE).get();
+            await().atMost(Duration.ofSeconds(12))
+                .until(() -> client.getAtomicLong(keys.key("test-count", "pending-crash")).get() == 1);
+            String queueOwner =
+                client.<String>getBucket(keys.key("test-owner", "pending-crash"), StringCodec.INSTANCE).get();
             int queueOwnerIndex = queueOwner.equals("worker-a") ? 0 : 1;
             Process queueKilled = processes.get(queueOwnerIndex);
             queueKilled.destroyForcibly();
             assertThat(queueKilled.waitFor(10, TimeUnit.SECONDS)).isTrue();
             await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
                 assertThat(client.getList(keys.key("test-results", "pending-crash"), StringCodec.INSTANCE).readAll())
-                        .containsExactly(pendingId);
+                    .containsExactly(pendingId);
                 assertThat(client.getAtomicLong(keys.key("test-count", "pending-crash")).get()).isEqualTo(2);
             });
-            await().atMost(Duration.ofSeconds(10)).until(() -> !client.getBucket(keys.key("owner", "node:" + queueOwner)).isExists());
+            await().atMost(Duration.ofSeconds(10))
+                .until(() -> !client.getBucket(keys.key("owner", "node:" + queueOwner)).isExists());
             processes.set(queueOwnerIndex, startWorker(address, keys, queueOwner));
             await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
                 assertThat(queries.instances()).hasSize(2);
                 assertThat(processes.get(queueOwnerIndex).isAlive()).isTrue();
             });
             assertThat(commands.triggerTask("crash-job")).isTrue();
-            await().atMost(Duration.ofSeconds(10)).until(() -> client.getAtomicLong(keys.key("test-count", "job-crash")).get() == 1);
+            await().atMost(Duration.ofSeconds(10))
+                .until(() -> client.getAtomicLong(keys.key("test-count", "job-crash")).get() == 1);
             String owner = client.<String>getBucket(keys.key("test-owner", "job-crash"), StringCodec.INSTANCE).get();
             Process killed = processes.get(owner.equals("worker-a") ? 0 : 1);
             killed.destroyForcibly();
             assertThat(killed.waitFor(10, TimeUnit.SECONDS)).isTrue();
             await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
-                var state = client.<String, String>getMap(keys.key("schedule-state", "crash-job"), StringCodec.INSTANCE);
+                var state =
+                    client.<String, String>getMap(keys.key("schedule-state", "crash-job"), StringCodec.INSTANCE);
                 JobExecution result = json.read(state.get("execution"), JobExecution.class);
                 assertThat(result.status()).isEqualTo("SUCCEEDED");
                 assertThat(result.instanceId()).isNotEqualTo(owner);
@@ -136,11 +149,12 @@ class RuntimeProcessIT {
             client.shutdown();
         }
     }
+
     private Process startWorker(String address, KeySpace keys, String instance) throws Exception {
         Path log = Files.createTempFile("rdt-restarted-" + instance, ".log");
-        return new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Xmx192m", "-cp", System.getProperty("java.class.path"), RuntimeWorkerProcess.class.getName(),
-                address, keys.namespace(), instance).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        return new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-Xmx192m", "-cp",
+            System.getProperty("java.class.path"), RuntimeWorkerProcess.class.getName(), address, keys.namespace(),
+            instance).redirectErrorStream(true).redirectOutput(log.toFile()).start();
     }
 
 }

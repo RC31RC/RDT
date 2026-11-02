@@ -13,12 +13,14 @@ public @interface RdtCacheEvict {
 
     /**
      * 返回SpEL 键。
+     *
      * @return SpEL 键
      */
     String key() default "";
 
     /**
      * 返回是否在调用前清除缓存，且不受事务提交结果影响。
+     *
      * @return 是否在调用前清除缓存，且不受事务提交结果影响
      */
     boolean beforeInvocation() default false;

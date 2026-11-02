@@ -24,6 +24,7 @@ public final class RdtRateLimitAspect {
 
     /**
      * 创建限流切面。
+     *
      * @param limiter 功能模板
      * @param properties 默认配置
      * @param methods 方法解析支持组件
@@ -36,6 +37,7 @@ public final class RdtRateLimitAspect {
 
     /**
      * 执行速率限制或带租约的并发限制。
+     *
      * @param point 方法调用
      * @param annotation 限流定义
      * @return 业务结果
@@ -50,14 +52,16 @@ public final class RdtRateLimitAspect {
         return switch (annotation.mode()) {
             case QPS -> {
                 if (!limiter.tryAcquire(key, annotation.permits(),
-                        methods.duration(annotation.interval(), properties.rateLimit().interval()), wait)) {
+                    methods.duration(annotation.interval(), properties.rateLimit().interval()), wait)) {
                     throw rejected();
                 }
                 yield point.proceed();
             }
             case CONCURRENCY -> {
-                try (LockHandle ignored = limiter.tryConcurrency(key, annotation.permits(), wait,
-                        methods.duration(annotation.leaseTime(), properties.rateLimit().leaseTime())).orElseThrow(this::rejected)) {
+                try (LockHandle ignored = limiter
+                    .tryConcurrency(key, annotation.permits(), wait,
+                        methods.duration(annotation.leaseTime(), properties.rateLimit().leaseTime()))
+                    .orElseThrow(this::rejected)) {
                     yield point.proceed();
                 }
             }

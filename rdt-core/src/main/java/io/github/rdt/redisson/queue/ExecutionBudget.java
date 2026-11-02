@@ -28,13 +28,13 @@ final class ExecutionBudget implements AutoCloseable {
 
     ExecutionBudget(QueuePolicy policy) {
         shutdownTimeout = policy.shutdownTimeout();
-        inFlight =
-                new Semaphore(Math.min(policy.maxConcurrentHandlers() + policy.localBufferCapacity(),
-                        policy.localBufferBytes() / policy.maxMessageBytes()), true);
+        inFlight = new Semaphore(Math.min(policy.maxConcurrentHandlers() + policy.localBufferCapacity(),
+            policy.localBufferBytes() / policy.maxMessageBytes()), true);
         handlers = new Semaphore(policy.maxConcurrentHandlers(), true);
         reads = new Semaphore(policy.maxBlockingReads(), true);
         buffer = new ArrayBlockingQueue<>(policy.localBufferCapacity(), true);
-        for (int i = 0; i < policy.maxConcurrentHandlers(); i++) workers.submit(this::dispatch);
+        for (int i = 0; i < policy.maxConcurrentHandlers(); i++)
+            workers.submit(this::dispatch);
     }
 
     void reserve() throws InterruptedException {
@@ -69,9 +69,13 @@ final class ExecutionBudget implements AutoCloseable {
         return workers.submit(work);
     }
 
-    void acquireRead() throws InterruptedException { reads.acquire(); }
+    void acquireRead() throws InterruptedException {
+        reads.acquire();
+    }
 
-    void releaseRead() { reads.release(); }
+    void releaseRead() {
+        reads.release();
+    }
 
     <T> T read(Callable<T> operation) throws Exception {
         reads.acquire();
@@ -92,28 +96,34 @@ final class ExecutionBudget implements AutoCloseable {
             boolean acquired = false;
             try {
                 delivery = buffer.poll(500, TimeUnit.MILLISECONDS);
-                if (delivery == null) continue;
+                if (delivery == null)
+                    continue;
                 acquireHandler();
                 acquired = true;
-                if (!closed.get()) delivery.work().run();
+                if (!closed.get())
+                    delivery.work().run();
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 return;
             } catch (RuntimeException failure) {
                 log.warn("Buffered handler failed; Pending remains recoverable", failure);
             } finally {
-                if (acquired) releaseHandler();
-                if (delivery != null) delivery.release().run();
+                if (acquired)
+                    releaseHandler();
+                if (delivery != null)
+                    delivery.release().run();
             }
         }
     }
 
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) return;
+        if (!closed.compareAndSet(false, true))
+            return;
         // Discarding buffered work must release local permits, never ACK a Redis delivery.
         Delivery discarded;
-        while ((discarded = buffer.poll()) != null) discarded.release().run();
+        while ((discarded = buffer.poll()) != null)
+            discarded.release().run();
         workers.shutdown();
         try {
             if (!workers.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS))
@@ -124,5 +134,6 @@ final class ExecutionBudget implements AutoCloseable {
         }
     }
 
-    private record Delivery(Runnable work, Runnable release) {}
+    private record Delivery(Runnable work, Runnable release) {
+    }
 }

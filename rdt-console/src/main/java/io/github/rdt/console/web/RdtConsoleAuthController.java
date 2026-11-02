@@ -19,20 +19,23 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("${rdt.console.api-path:/rdt/management}/auth")
 public final class RdtConsoleAuthController {
     private final ConsoleSecurityService security;
-    public RdtConsoleAuthController(ConsoleSecurityService security) { this.security = security; }
+
+    public RdtConsoleAuthController(ConsoleSecurityService security) {
+        this.security = security;
+    }
 
     @PostMapping("/login")
-    public ManagementLoginResponse login(
-            @RequestBody
-            ManagementLoginRequest request, HttpServletRequest servlet) {
-        var login = security.login(request.username(), request.password(), servlet.getRemoteAddr(), System.currentTimeMillis());
+    public ManagementLoginResponse login(@RequestBody ManagementLoginRequest request, HttpServletRequest servlet) {
+        var login =
+            security.login(request.username(), request.password(), servlet.getRemoteAddr(), System.currentTimeMillis());
         return new ManagementLoginResponse(login.token(), login.expiresAtMillis(), login.principal());
     }
 
     @GetMapping("/me")
-    public ManagementPrincipal me(
-            @RequestAttribute(RdtConsoleAuthenticationFilter.PRINCIPAL_ATTRIBUTE)
-            ManagementPrincipal principal) { return principal; }
+    public ManagementPrincipal
+        me(@RequestAttribute(RdtConsoleAuthenticationFilter.PRINCIPAL_ATTRIBUTE) ManagementPrincipal principal) {
+        return principal;
+    }
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request) {
@@ -42,10 +45,8 @@ public final class RdtConsoleAuthController {
 
     @PostMapping("/password")
     public ResponseEntity<Void> password(
-            @RequestAttribute(RdtConsoleAuthenticationFilter.PRINCIPAL_ATTRIBUTE)
-            ManagementPrincipal principal,
-            @RequestBody
-            ConsoleSecurityService.PasswordChange command) {
+        @RequestAttribute(RdtConsoleAuthenticationFilter.PRINCIPAL_ATTRIBUTE) ManagementPrincipal principal,
+        @RequestBody ConsoleSecurityService.PasswordChange command) {
         security.changePassword(principal.username(), command);
         return ResponseEntity.noContent().build();
     }

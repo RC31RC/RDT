@@ -8,10 +8,11 @@ import java.util.Optional;
 
 /** 参数校验、无歧义键编码和异常转换。 */
 public final class RdtSupport {
-    private RdtSupport() { }
+    private RdtSupport() {}
 
     /**
      * 校验必要条件。
+     *
      * @param condition 必须满足的条件
      * @param message 错误说明
      */
@@ -23,6 +24,7 @@ public final class RdtSupport {
 
     /**
      * 校验毫秒精度下大于零的时长。
+     *
      * @param value 时长
      * @param name 用于诊断的参数名称
      * @return 传入的时长
@@ -34,6 +36,7 @@ public final class RdtSupport {
 
     /**
      * 编码逻辑名称，避免注入 Redis 哈希标签。
+     *
      * @param value 非空白逻辑名称
      * @return URL 安全且可逆的编码片段
      */

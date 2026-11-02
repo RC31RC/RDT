@@ -23,30 +23,25 @@ final class PendingRecoveryCoordinator implements AutoCloseable {
     private Lease lease;
     private long nextCheck;
 
-    PendingRecoveryCoordinator(
-            RedissonClient client,
-            KeySpace keys,
-            DistributedLockTemplate locks,
-            QueueSubscription spec,
-            RuntimeIdentity identity,
-            QueuePolicy policy) {
+    PendingRecoveryCoordinator(RedissonClient client, KeySpace keys, DistributedLockTemplate locks,
+        QueueSubscription spec, RuntimeIdentity identity, QueuePolicy policy) {
         leases = new RedisOwnerLeaseService(client, keys, locks);
         name =
-                "pending-recovery:"
-                        + RdtSupport.component(spec.destination())
-                        + ":"
-                        + RdtSupport.component(spec.group());
+            "pending-recovery:" + RdtSupport.component(spec.destination()) + ":" + RdtSupport.component(spec.group());
         owner = identity.instanceId() + ":" + identity.runId() + ":" + UUID.randomUUID();
         ttl = policy.resolve(spec.options()).pollTimeout().multipliedBy(3).plusSeconds(3);
     }
 
     boolean isLeader() {
         long now = System.nanoTime();
-        if (now < nextCheck) return lease != null;
+        if (now < nextCheck)
+            return lease != null;
         nextCheck = now + Duration.ofSeconds(1).toNanos();
         try {
-            if (lease != null && !leases.renew(lease, ttl)) lease = null;
-            if (lease == null) lease = leases.acquire(name, owner, ttl).orElse(null);
+            if (lease != null && !leases.renew(lease, ttl))
+                lease = null;
+            if (lease == null)
+                lease = leases.acquire(name, owner, ttl).orElse(null);
             return lease != null;
         } catch (RuntimeException error) {
             lease = null;

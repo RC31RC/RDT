@@ -69,9 +69,9 @@ import org.slf4j.LoggerFactory;
 public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplate, AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(RedissonScheduledTaskTemplate.class);
     private static final String REDIS_TIME = """
-            local t = redis.call('TIME')
-            return t[1] * 1000 + math.floor(t[2] / 1000)
-            """;
+        local t = redis.call('TIME')
+        return t[1] * 1000 + math.floor(t[2] / 1000)
+        """;
     private final RedissonClient client;
     private final KeySpace keys;
     private final JsonCodec json;
@@ -90,10 +90,10 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     private volatile List<RuntimeInstance> directory = List.of();
     private final long workLeaseMillis;
     private final Map<String, Registration> registrations = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().daemon(true).name("rdt-schedule-timer").factory());
-    private final ScheduledExecutorService leaseTimer = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().daemon(true).name("rdt-schedule-renewal").factory());
+    private final ScheduledExecutorService timer = Executors
+        .newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon(true).name("rdt-schedule-timer").factory());
+    private final ScheduledExecutorService leaseTimer = Executors
+        .newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon(true).name("rdt-schedule-renewal").factory());
     // Each submitted invocation gets its own virtual thread; the semaphore below only applies backpressure.
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
     private final Semaphore capacity;
@@ -102,24 +102,27 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     private final RuntimeDirectoryProvider routing;
     private final Map<String, Semaphore> jobSlots = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> jobActive = new ConcurrentHashMap<>();
+
     public void metrics(RdtMetrics value) {
         metrics = value;
         value.gauge("rdt.schedule.reservation", this, scheduler -> scheduler.reservations(), "node", instanceId);
     }
+
     private double reservations() {
         Long count = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_ONLY,
-                "local n=0; local t=redis.call('TIME'); local now=t[1]*1000+math.floor(t[2]/1000); for _,v in ipairs(redis.call('hvals',KEYS[1])) do if tonumber(v)>now then n=n+1 end end; return n",
-                RScript.ReturnType.LONG, List.of(reservationKey(instanceId, identity.runId())));
+            "local n=0; local t=redis.call('TIME'); local now=t[1]*1000+math.floor(t[2]/1000); for _,v in ipairs(redis.call('hvals',KEYS[1])) do if tonumber(v)>now then n=n+1 end end; return n",
+            RScript.ReturnType.LONG, List.of(reservationKey(instanceId, identity.runId())));
         return count == null ? 0 : count;
     }
+
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong lastRedisFailureLogNanos = new AtomicLong();
     private final AtomicInteger dueCursor = new AtomicInteger();
     private static final long REDIS_FAILURE_LOG_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(30);
 
     public RedissonScheduledTaskTemplate(RedissonClient client, KeySpace keys, JsonCodec json,
-                                        DistributedLockTemplate locks, SchedulerSettings options, CronParser cronParser,
-                                        RuntimeIdentity identity, RetryClassifier retryClassifier) {
+        DistributedLockTemplate locks, SchedulerSettings options, CronParser cronParser, RuntimeIdentity identity,
+        RetryClassifier retryClassifier) {
         this.identity = identity;
         this.retryClassifier = Objects.requireNonNull(retryClassifier, "retryClassifier");
         this.cronParser = cronParser;
@@ -128,8 +131,8 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         this.json = json;
         this.locks = locks;
         this.options = options;
-        executions=new JobExecutionRepository(client,keys,json,options.resultTtl(),options.maxHistoryEntries());
-        due=new ScheduleDueIndex(client,keys,json);
+        executions = new JobExecutionRepository(client, keys, json, options.resultTtl(), options.maxHistoryEntries());
+        due = new ScheduleDueIndex(client, keys, json);
         mailbox = new JobMailbox(client, keys, json);
         routing = new RedisRuntimeDirectoryProvider(client, keys, json);
         workLeaseMillis = options.workerLease().toMillis();
@@ -139,26 +142,27 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         mailboxReceiver = workers.submit(this::receiveInvocations);
         long renewalInterval = Math.max(1, Math.min(workLeaseMillis / 3, options.pollInterval().toMillis()));
         leaseTimer.scheduleWithFixedDelay(this::renewAttempts, renewalInterval, renewalInterval, TimeUnit.MILLISECONDS);
-        timer.scheduleWithFixedDelay(this::tick, options.pollInterval().toMillis(),
-                options.pollInterval().toMillis(), TimeUnit.MILLISECONDS);
+        timer.scheduleWithFixedDelay(this::tick, options.pollInterval().toMillis(), options.pollInterval().toMillis(),
+            TimeUnit.MILLISECONDS);
     }
 
     @Override
     public Subscription registerContextual(String taskId, String displayName, ScheduleSpec schedule,
-                                 ScheduleOptions taskOptions, ContextualTask task) {
+        ScheduleOptions taskOptions, ContextualTask task) {
         RdtSupport.component(taskId);
         String name = displayName == null ? "" : displayName.strip();
         RdtSupport.require(name.length() <= 200, "Task display name must not exceed 200 characters");
         RdtSupport.require(!closed.get() && task != null && schedule != null && taskOptions != null,
-                "Scheduler closed or registration invalid");
+            "Scheduler closed or registration invalid");
         CronSchedule cronExpression = parseCron(schedule);
         SchedulePolicy policy = defaultPolicy.resolve(taskOptions);
         Registration registration = new Registration(taskId, name, schedule, cronExpression, policy, task);
         registration.route = taskOptions.route() == null ? JobRoute.HEALTH_FIRST : taskOptions.route();
         registration.targetInstanceId = taskOptions.targetInstanceId() == null ? "" : taskOptions.targetInstanceId();
         RdtSupport.require(registration.route != JobRoute.SPECIFIED || !registration.targetInstanceId.isBlank(),
-                "SPECIFIED route requires targetInstanceId for job " + taskId);
-        RdtSupport.require(registrations.putIfAbsent(taskId, registration) == null, "Duplicate local task ID: " + taskId);
+            "SPECIFIED route requires targetInstanceId for job " + taskId);
+        RdtSupport.require(registrations.putIfAbsent(taskId, registration) == null,
+            "Duplicate local task ID: " + taskId);
         try {
             locks.execute("schedule:" + taskId, LockOptions.defaults(), () -> {
                 RMap<String, String> state = state(taskId);
@@ -181,13 +185,15 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "Schedule registration failed", e);
         }
 
-        identity.register("job:" + taskId, () -> new RuntimeComponent("job", taskId, "", "", fingerprint(registration), 1, jobActive.computeIfAbsent(taskId, ignored -> new AtomicInteger()).get(), 0, 0));
+        identity.register("job:" + taskId, () -> new RuntimeComponent("job", taskId, "", "", fingerprint(registration),
+            1, jobActive.computeIfAbsent(taskId, ignored -> new AtomicInteger()).get(), 0, 0));
         return () -> {
             registration.active = false;
             registrations.remove(taskId, registration);
             identity.unregister("job:" + taskId);
             Thread runner = registration.runner;
-            if (runner != null) runner.interrupt();
+            if (runner != null)
+                runner.interrupt();
         };
     }
 
@@ -203,35 +209,42 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     }
 
     private void dispatchDue() {
-        if (!identity.acceptingNewWork()) return;
+        if (!identity.acceptingNewWork())
+            return;
         // Scan only locally executable definitions. Historical/unregistered IDs never spend
         // this node's candidate budget and no large ZRANGEBYSCORE OFFSET is needed.
         List<String> registered = registrations.keySet().stream().sorted().toList();
-        if (registered.isEmpty()) return;
+        if (registered.isEmpty())
+            return;
         int start = Math.floorMod(dueCursor.get(), registered.size());
         List<String> candidates = new ArrayList<>();
         for (int i = 0; i < Math.min(ScheduleDueIndex.LOCAL_SCAN_LIMIT, registered.size()); i++)
             candidates.add(registered.get((start + i) % registered.size()));
         long now = now();
-        var page = due.findDue(candidates, now,
-                Math.min(options.maxDuePerPoll(), ScheduleDueIndex.LOCAL_SCAN_LIMIT));
+        var page = due.findDue(candidates, now, Math.min(options.maxDuePerPoll(), ScheduleDueIndex.LOCAL_SCAN_LIMIT));
         // Advance by examined IDs, not by returned IDs: cold pages and perpetually due jobs
         // cannot repeatedly consume the same prefix or starve the end of a page.
         dueCursor.set((start + page.scanned()) % registered.size());
         List<String> ids = page.ids();
         for (String id : ids) {
             Registration registration = registrations.get(id);
-            if (registration != null) withJobLock(id, () -> coordinate(registration, now));
+            if (registration != null)
+                withJobLock(id, () -> coordinate(registration, now));
         }
     }
 
     private void renewAttempts() {
         // Draining and graceful close stop dispatch, but in-flight business work must keep its lease.
         // A separate control timer prevents slow directory/transport calls from starving renewal.
-        if (activeAttempts.isEmpty()) return;
+        if (activeAttempts.isEmpty())
+            return;
         for (ActiveAttempt active : activeAttempts.values()) {
-            if (active.fenced.get()) continue;
-            if (!active.owner.getAsBoolean() || System.nanoTime() >= active.deadlineNanos) { active.fenced.set(true); continue; }
+            if (active.fenced.get())
+                continue;
+            if (!active.owner.getAsBoolean() || System.nanoTime() >= active.deadlineNanos) {
+                active.fenced.set(true);
+                continue;
+            }
             JobInvocation invocation = active.invocation;
             AtomicBoolean renewed = new AtomicBoolean();
             try {
@@ -240,17 +253,23 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
                     JobExecution execution = executions.execution(state);
                     long now = now();
                     if (active.owner.getAsBoolean() && owns(execution, invocation)
-                            && "RUNNING".equals(execution.status()) && execution.retryAt() > now
-                            && reserve(instanceId,identity.runId(),invocation.dispatchToken(),now,true,options.maxConcurrentTasks())) {
-                        renewed.set(executions.transition(state,execution,execution.transition("RUNNING",instanceId,identity.runId(),
-                                invocation.dispatchToken(),now,now+workLeaseMillis,execution.attempt(),execution.detail()),null,true));
+                        && "RUNNING".equals(execution.status()) && execution.retryAt() > now && reserve(instanceId,
+                            identity.runId(), invocation.dispatchToken(), now, true, options.maxConcurrentTasks())) {
+                        renewed.set(executions.transition(state, execution,
+                            execution.transition("RUNNING", instanceId, identity.runId(), invocation.dispatchToken(),
+                                now, now + workLeaseMillis, execution.attempt(), execution.detail()),
+                            null, true));
                     }
                 });
-                if (renewed.get()) { active.renewalFailures.set(0); active.deadlineNanos=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(workLeaseMillis); }
-                else if (active.renewalFailures.incrementAndGet()>=3) active.fenced.set(true);
+                if (renewed.get()) {
+                    active.renewalFailures.set(0);
+                    active.deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(workLeaseMillis);
+                } else if (active.renewalFailures.incrementAndGet() >= 3)
+                    active.fenced.set(true);
             } catch (RuntimeException failure) {
-                if (active.renewalFailures.incrementAndGet()>=3) active.fenced.set(true);
-                logDispatchFailure(invocation.jobId(),invocation.jobId(),failure);
+                if (active.renewalFailures.incrementAndGet() >= 3)
+                    active.fenced.set(true);
+                logDispatchFailure(invocation.jobId(), invocation.jobId(), failure);
             }
         }
     }
@@ -266,13 +285,17 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
                 }
                 submitted.acquire();
                 reserved = 1;
-                while (reserved < options.maxConcurrentTasks() && submitted.tryAcquire()) reserved++;
+                while (reserved < options.maxConcurrentTasks() && submitted.tryAcquire())
+                    reserved++;
                 List<String> messages = mailbox.receive(instanceId, identity.runId(), reserved);
                 for (String value : messages) {
                     JobInvocation invocation = json.read(value, JobInvocation.class);
                     workers.submit(() -> {
-                        try { executeInvocation(invocation); }
-                        finally { submitted.release(); }
+                        try {
+                            executeInvocation(invocation);
+                        } finally {
+                            submitted.release();
+                        }
                     });
                     reserved--;
                 }
@@ -280,61 +303,80 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } catch (RuntimeException error) {
-                if (!closed.get()) logDispatchFailure("mailbox", "mailbox", error);
-                try { Thread.sleep(100); }
-                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                if (!closed.get())
+                    logDispatchFailure("mailbox", "mailbox", error);
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             } finally {
-                if (reserved > 0) submitted.release(reserved);
+                if (reserved > 0)
+                    submitted.release(reserved);
             }
         }
     }
 
     private boolean withJobLock(String jobId, Runnable action) {
-        var lock = locks.tryLock("schedule:" + jobId,
-                new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ZERO));
-        if (lock.isEmpty()) return false;
-        try (LockHandle ignored = lock.get()) { action.run(); return true; }
+        var lock =
+            locks.tryLock("schedule:" + jobId, new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ZERO));
+        if (lock.isEmpty())
+            return false;
+        try (LockHandle ignored = lock.get()) {
+            action.run();
+            return true;
+        }
     }
 
     private boolean owns(JobExecution execution, JobInvocation invocation) {
-        return execution != null && instanceId.equals(execution.instanceId()) && invocation.executionId().equals(execution.executionId())
-                && invocation.dispatchToken().equals(execution.dispatchToken())
-                && identity.runId().equals(execution.runId());
+        return execution != null && instanceId.equals(execution.instanceId())
+            && invocation.executionId().equals(execution.executionId())
+            && invocation.dispatchToken().equals(execution.dispatchToken())
+            && identity.runId().equals(execution.runId());
     }
 
     private void coordinate(Registration registration, long now) {
-        if (!identity.acceptingNewWork()) return;
+        if (!identity.acceptingNewWork())
+            return;
         RMap<String, String> state = state(registration.id);
-        if ("true".equals(state.get("retired"))) return;
+        if ("true".equals(state.get("retired")))
+            return;
         ScheduleState definition = ensureScheduleState(registration, state, false);
-        if (!definition.active()) return;
+        if (!definition.active())
+            return;
         JobExecution execution = executions.execution(state);
         if (execution == null || execution.terminal()) {
-            if ("true".equals(state.get("paused")) || definition.next() > now) { due.refreshDueIndex(registration.id, state); return; }
+            if ("true".equals(state.get("paused")) || definition.next() > now) {
+                due.refreshDueIndex(registration.id, state);
+                return;
+            }
             if (registration.policy.misfirePolicy() == ScheduleMisfirePolicy.SKIP
-                    && now - definition.next() > registration.policy.misfireThreshold().toMillis()) {
-                state.fastPut("next", Long.toString(next(registration.schedule, registration.cronExpression, definition.next(), now)));
+                && now - definition.next() > registration.policy.misfireThreshold().toMillis()) {
+                state.fastPut("next",
+                    Long.toString(next(registration.schedule, registration.cronExpression, definition.next(), now)));
                 due.refreshDueIndex(registration.id, state);
                 return;
             }
             long scheduledAt = definition.next();
-            execution = new JobExecution("scheduled-" + scheduledAt, registration.id, scheduledAt, 0,
-                    "READY", "", "", "", now, now, "", 0);
+            execution = new JobExecution("scheduled-" + scheduledAt, registration.id, scheduledAt, 0, "READY", "", "",
+                "", now, now, "", 0);
             // The execution and watermark share one Redis command; a crash cannot consume a trigger alone.
-            state.putAll(Map.of("execution", json.write(execution), "next", Long.toString(
-                    registration.schedule instanceof ScheduleSpec.FixedDelay ? Long.MAX_VALUE
-                            : next(registration.schedule, registration.cronExpression, scheduledAt, now))));
+            state.putAll(Map.of("execution", json.write(execution), "next",
+                Long.toString(registration.schedule instanceof ScheduleSpec.FixedDelay ? Long.MAX_VALUE
+                    : next(registration.schedule, registration.cronExpression, scheduledAt, now))));
             executions.archive(execution);
         }
         if (("DISPATCHED".equals(execution.status()) || "RUNNING".equals(execution.status()))
-                && execution.retryAt() <= now) {
+            && execution.retryAt() <= now) {
             JobExecution recovered = execution.transition("READY", "", "", "", now, now, execution.attempt(),
-                    "LEASE_EXPIRED: worker lease expired; awaiting recovery");
-            if (!executions.transition(state, execution, recovered, null, false)) return;
+                "LEASE_EXPIRED: worker lease expired; awaiting recovery");
+            if (!executions.transition(state, execution, recovered, null, false))
+                return;
             releaseReservation(execution.instanceId(), execution.runId(), execution.dispatchToken());
             execution = recovered;
         }
-        if (("READY".equals(execution.status()) || "WAITING".equals(execution.status())) && execution.retryAt() <= now) {
+        if (("READY".equals(execution.status()) || "WAITING".equals(execution.status()))
+            && execution.retryAt() <= now) {
             dispatch(registration, state, execution, now);
         }
         due.refreshDueIndex(registration.id, state);
@@ -346,29 +388,36 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             directoryRefresh = now + Math.min(5000, workLeaseMillis / 3);
         }
         List<RuntimeInstance> eligible = new ArrayList<>(directory.stream()
-                .filter(node -> !node.draining() && !node.pressure().paused() && node.components() != null && node.components().stream()
-                        .anyMatch(component -> component.kind().equals("job") && component.id().equals(registration.id)
-                                && component.definition().equals(fingerprint(registration))))
-                .filter(node -> registration.route != JobRoute.SPECIFIED || node.instanceId().equals(registration.targetInstanceId))
-                .toList());
+            .filter(node -> !node.draining() && !node.pressure().paused() && node.components() != null
+                && node.components().stream()
+                    .anyMatch(component -> component.kind().equals("job") && component.id().equals(registration.id)
+                        && component.definition().equals(fingerprint(registration))))
+            .filter(node -> registration.route != JobRoute.SPECIFIED
+                || node.instanceId().equals(registration.targetInstanceId))
+            .toList());
         // Detached programmatic templates have no Spring registry but use the same fenced worker protocol.
         if (eligible.stream().noneMatch(node -> node.runId().equals(identity.runId())) && identity.acceptingNewWork()
-                && (registration.route != JobRoute.SPECIFIED || instanceId.equals(registration.targetInstanceId))) {
-            eligible.add(new RuntimeInstance(instanceId, identity.runId(), "application", 0, now, workLeaseMillis, 0, options.maxConcurrentTasks(), identity.generation(), false, identity.components(), identity.pressure()));
+            && (registration.route != JobRoute.SPECIFIED || instanceId.equals(registration.targetInstanceId))) {
+            eligible.add(new RuntimeInstance(instanceId, identity.runId(), "application", 0, now, workLeaseMillis, 0,
+                options.maxConcurrentTasks(), identity.generation(), false, identity.components(),
+                identity.pressure()));
         }
-        if (registration.route == JobRoute.RANDOM) Collections.shuffle(eligible);
-        else eligible.sort(Comparator.comparingDouble(node -> node.components().stream()
-                .filter(component -> component.kind().equals("job")).mapToInt(RuntimeComponent::active).sum()
-                        / (double)Math.max(1,node.scheduleConcurrency())));
+        if (registration.route == JobRoute.RANDOM)
+            Collections.shuffle(eligible);
+        else
+            eligible.sort(Comparator
+                .comparingDouble(node -> node.components().stream().filter(component -> component.kind().equals("job"))
+                    .mapToInt(RuntimeComponent::active).sum() / (double)Math.max(1, node.scheduleConcurrency())));
         return eligible;
     }
 
     private void dispatch(Registration registration, RMap<String, String> state, JobExecution execution, long now) {
         for (RuntimeInstance node : candidates(registration, now)) {
             String token = UUID.randomUUID().toString();
-            if (!reserve(node.instanceId(), node.runId(), token, now, false, node.scheduleConcurrency())) continue;
-            JobExecution assigned = execution.transition("DISPATCHED", node.instanceId(), node.runId(), token,
-                    now, now + workLeaseMillis, execution.attempt(), "");
+            if (!reserve(node.instanceId(), node.runId(), token, now, false, node.scheduleConcurrency()))
+                continue;
+            JobExecution assigned = execution.transition("DISPATCHED", node.instanceId(), node.runId(), token, now,
+                now + workLeaseMillis, execution.attempt(), "");
             if (!executions.transition(state, execution, assigned, null, false)) {
                 metrics.increment("rdt.schedule.dispatch", "result", "transition_lost");
                 releaseReservation(node.instanceId(), node.runId(), token);
@@ -381,7 +430,8 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
                     workers.submit(() -> executeInvocation(invocation));
                 } else {
                     // Redis-native TTL also reclaims a dead run with no worker or maintenance process.
-                    mailbox.send(node.instanceId(), node.runId(), invocation, options.workerLease(), node.scheduleConcurrency());
+                    mailbox.send(node.instanceId(), node.runId(), invocation, options.workerLease(),
+                        node.scheduleConcurrency());
                 }
                 metrics.increment("rdt.schedule.dispatch", "result", "ok");
                 return;
@@ -389,8 +439,10 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
                 metrics.increment("rdt.schedule.dispatch", "result", "submit_failed");
                 try {
                     long rejectedAt = now();
-                    if (executions.transition(state, assigned, execution.rejected("READY", rejectedAt,
-                            retryAdmission(registration, execution, rejectedAt), "SUBMIT_FAILED: old dispatch token fenced"), null, true)) {
+                    if (executions.transition(state, assigned,
+                        execution.rejected("READY", rejectedAt, retryAdmission(registration, execution, rejectedAt),
+                            "SUBMIT_FAILED: old dispatch token fenced"),
+                        null, true)) {
                         metrics.increment("rdt.schedule.dispatch.rollback", "reason", "submit_failed");
                         due.refreshDueIndex(registration.id, state);
                     } else {
@@ -403,39 +455,43 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             }
         }
         metrics.increment("rdt.schedule.dispatch", "result", "no_worker");
-        if (now>=registration.nextAdmissionWarning) {
-            log.warn("No available worker job={}; applying admission backoff",registration.id);
-            registration.nextAdmissionWarning=now+30000;
+        if (now >= registration.nextAdmissionWarning) {
+            log.warn("No available worker job={}; applying admission backoff", registration.id);
+            registration.nextAdmissionWarning = now + 30000;
         }
-        executions.transition(state, execution, execution.rejected("WAITING", now, retryAdmission(registration, execution, now), "NO_WORKER: no healthy available worker"), null, false);
+        executions.transition(state, execution, execution.rejected("WAITING", now,
+            retryAdmission(registration, execution, now), "NO_WORKER: no healthy available worker"), null, false);
     }
 
-    private String reservationKey(String worker, String run) { return keys.key("job-reservations", worker + ":" + run); }
+    private String reservationKey(String worker, String run) {
+        return keys.key("job-reservations", worker + ":" + run);
+    }
 
     private boolean reserve(String worker, String run, String token, long now, boolean renewal, int limit) {
         Long accepted = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, """
-                local entries = redis.call('hgetall', KEYS[1])
-                for i=1,#entries,2 do
-                  if tonumber(entries[i+1]) <= tonumber(ARGV[1]) then redis.call('hdel', KEYS[1], entries[i]) end
-                end
-                if ARGV[5] == 'true' and redis.call('hexists', KEYS[1], ARGV[3]) == 0 then return 0 end
-                if redis.call('hexists', KEYS[1], ARGV[3]) == 1 or redis.call('hlen', KEYS[1]) < tonumber(ARGV[4]) then
-                  redis.call('hset', KEYS[1], ARGV[3], ARGV[2])
-                  redis.call('pexpire', KEYS[1], math.max(1000,(tonumber(ARGV[2])-tonumber(ARGV[1]))*2))
-                  return 1
-                end
-                return 0
-                """, RScript.ReturnType.LONG, List.of(reservationKey(worker, run)),
-                now, now + workLeaseMillis, token, limit, Boolean.toString(renewal));
+            local entries = redis.call('hgetall', KEYS[1])
+            for i=1,#entries,2 do
+              if tonumber(entries[i+1]) <= tonumber(ARGV[1]) then redis.call('hdel', KEYS[1], entries[i]) end
+            end
+            if ARGV[5] == 'true' and redis.call('hexists', KEYS[1], ARGV[3]) == 0 then return 0 end
+            if redis.call('hexists', KEYS[1], ARGV[3]) == 1 or redis.call('hlen', KEYS[1]) < tonumber(ARGV[4]) then
+              redis.call('hset', KEYS[1], ARGV[3], ARGV[2])
+              redis.call('pexpire', KEYS[1], math.max(1000,(tonumber(ARGV[2])-tonumber(ARGV[1]))*2))
+              return 1
+            end
+            return 0
+            """, RScript.ReturnType.LONG, List.of(reservationKey(worker, run)), now, now + workLeaseMillis, token,
+            limit, Boolean.toString(renewal));
         return Long.valueOf(1).equals(accepted);
     }
 
     private void releaseReservation(String worker, String run, String token) {
-        if (worker != null && !worker.isBlank()) client.getMap(reservationKey(worker, run), StringCodec.INSTANCE).fastRemove(token);
+        if (worker != null && !worker.isBlank())
+            client.getMap(reservationKey(worker, run), StringCodec.INSTANCE).fastRemove(token);
     }
 
     private long retryAdmission(Registration registration, JobExecution execution, long now) {
-        int rejected = execution.dispatchRejections()+1;
+        int rejected = execution.dispatchRejections() + 1;
         long delay = Math.min(60000, 250L << Math.min(rejected, 8));
         if (rejected >= 3 && registration != null) {
             delay = Math.max(delay, next(registration.schedule, registration.cronExpression, now, now) - now);
@@ -449,10 +505,11 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         try {
             var state = state(invocation.jobId());
             var execution = executions.execution(state);
-            if (!owns(execution, invocation) || !"DISPATCHED".equals(execution.status())) return;
+            if (!owns(execution, invocation) || !"DISPATCHED".equals(execution.status()))
+                return;
             long now = now();
             var ready = execution.rejected("READY", now,
-                    retryAdmission(registrations.get(invocation.jobId()), execution, now), "REJECTED:" + reason);
+                retryAdmission(registrations.get(invocation.jobId()), execution, now), "REJECTED:" + reason);
             if (executions.transition(state, execution, ready, null, true)) {
                 metrics.increment("rdt.schedule.dispatch.rollback", "reason", reason);
                 if ("capacity".equals(reason)) {
@@ -470,24 +527,33 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     private void leaseLost(JobInvocation invocation, long started) {
         metrics.increment("rdt.schedule.lease.lost", "job", invocation.jobId());
         long completed = now();
-        executions.save(invocation.jobId(), invocation.executionId() + ":lease-lost:" + invocation.dispatchToken(), options.resultTtl(),
-                new TaskResult(invocation.jobId(), Instant.ofEpochMilli(started).toString(), Instant.ofEpochMilli(started).toString(),
-                        Instant.ofEpochMilli(completed).toString(), instanceId, false, "LEASE_LOST: stale completion discarded", identity.runId(),
-                        invocation.executionId(), 0, "LEASE_LOST"));
+        executions.save(invocation.jobId(), invocation.executionId() + ":lease-lost:" + invocation.dispatchToken(),
+            options.resultTtl(),
+            new TaskResult(invocation.jobId(), Instant.ofEpochMilli(started).toString(),
+                Instant.ofEpochMilli(started).toString(), Instant.ofEpochMilli(completed).toString(), instanceId, false,
+                "LEASE_LOST: stale completion discarded", identity.runId(), invocation.executionId(), 0, "LEASE_LOST"));
         log.warn("Stale task completion discarded job={} token={}", invocation.jobId(), invocation.dispatchToken());
     }
 
     private void executeInvocation(JobInvocation invocation) {
         Registration registration = registrations.get(invocation.jobId());
-        if (registration == null || !registration.active) { reject(invocation, "unregistered"); return; }
-        if (!identity.acceptingNewWork()) { reject(invocation, "draining"); return; }
+        if (registration == null || !registration.active) {
+            reject(invocation, "unregistered");
+            return;
+        }
+        if (!identity.acceptingNewWork()) {
+            reject(invocation, "draining");
+            return;
+        }
         Semaphore jobSlot = jobSlots.computeIfAbsent(invocation.jobId(), ignored -> new Semaphore(1, true));
         if (!jobSlot.tryAcquire()) {
-            reject(invocation, "capacity"); return;
+            reject(invocation, "capacity");
+            return;
         }
         if (!capacity.tryAcquire()) {
             jobSlot.release();
-            reject(invocation, "capacity"); return;
+            reject(invocation, "capacity");
+            return;
         }
         BooleanSupplier owner = identity.guard();
         AtomicBoolean accepted = new AtomicBoolean();
@@ -496,46 +562,62 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             locks.execute("schedule:" + invocation.jobId(), LockOptions.defaults(), () -> {
                 RMap<String, String> state = state(invocation.jobId());
                 JobExecution execution = executions.execution(state);
-                if (owns(execution, invocation) && "DISPATCHED".equals(execution.status())
-                        && owner.getAsBoolean() && execution.retryAt() > now()) {
-                    if (executions.transition(state, execution, execution.transition("RUNNING", instanceId, identity.runId(), invocation.dispatchToken(),
-                            now(), now() + workLeaseMillis, execution.attempt() + 1, ""), null, true)) {
-                        activeAttempts.put(invocation.dispatchToken(), new ActiveAttempt(invocation, owner, workLeaseMillis));
+                if (owns(execution, invocation) && "DISPATCHED".equals(execution.status()) && owner.getAsBoolean()
+                    && execution.retryAt() > now()) {
+                    if (executions.transition(
+                        state, execution, execution.transition("RUNNING", instanceId, identity.runId(),
+                            invocation.dispatchToken(), now(), now() + workLeaseMillis, execution.attempt() + 1, ""),
+                        null, true)) {
+                        activeAttempts.put(invocation.dispatchToken(),
+                            new ActiveAttempt(invocation, owner, workLeaseMillis));
                         jobActive.computeIfAbsent(invocation.jobId(), ignored -> new AtomicInteger()).incrementAndGet();
                         accepted.set(true);
                     }
                 }
                 return null;
             });
-            if (!accepted.get()) return;
+            if (!accepted.get())
+                return;
             long started = now();
             Object value = null;
             Exception failure = null;
             registration.runner = Thread.currentThread();
             ActiveAttempt active = activeAttempts.get(invocation.dispatchToken());
-            var context = new TaskExecutionContext(invocation.jobId(), invocation.executionId(), invocation.dispatchToken(),
-                    () -> !active.fenced.get() && active.owner.getAsBoolean() && System.nanoTime() < active.deadlineNanos);
-            try { context.assertLease(); value = registration.task.execute(context); }
-            catch (Exception error) { failure = error; if (error instanceof InterruptedException) Thread.currentThread().interrupt(); }
+            var context = new TaskExecutionContext(invocation.jobId(), invocation.executionId(),
+                invocation.dispatchToken(),
+                () -> !active.fenced.get() && active.owner.getAsBoolean() && System.nanoTime() < active.deadlineNanos);
+            try {
+                context.assertLease();
+                value = registration.task.execute(context);
+            } catch (Exception error) {
+                failure = error;
+                if (error instanceof InterruptedException)
+                    Thread.currentThread().interrupt();
+            }
             final Exception businessFailure = failure;
             final Object result = value;
-            if (!context.lease().getAsBoolean() || Thread.currentThread().isInterrupted()) { leaseLost(invocation, started); return; }
+            if (!context.lease().getAsBoolean() || Thread.currentThread().isInterrupted()) {
+                leaseLost(invocation, started);
+                return;
+            }
             locks.execute("schedule:" + invocation.jobId(), LockOptions.defaults(), () -> {
                 RMap<String, String> state = state(invocation.jobId());
                 JobExecution execution = executions.execution(state);
                 long completed = now();
                 if (!owns(execution, invocation) || !owner.getAsBoolean() || execution.retryAt() <= completed) {
-                    leaseLost(invocation, started); return null;
+                    leaseLost(invocation, started);
+                    return null;
                 }
                 String detail = businessFailure == null ? json.write(result)
-                        : businessFailure.getClass().getSimpleName() + ": " + businessFailure.getMessage();
+                    : businessFailure.getClass().getSimpleName() + ": " + businessFailure.getMessage();
                 detail = detail.substring(0, Math.min(detail.length(), 4000));
                 boolean retry = businessFailure != null && retryClassifier.isRetryable(businessFailure)
-                        && registration.policy.canRetry(execution.attempt());
-                long retryAt = retry ? completed + registration.policy.retry().delayAfter(execution.attempt()).toMillis() : 0;
-                JobExecution finished = execution.transition(retry ? "READY" : businessFailure == null ? "SUCCEEDED" : "FAILED",
-                        instanceId, identity.runId(), invocation.dispatchToken(), completed, retryAt,
-                        execution.attempt(), detail);
+                    && registration.policy.canRetry(execution.attempt());
+                long retryAt =
+                    retry ? completed + registration.policy.retry().delayAfter(execution.attempt()).toMillis() : 0;
+                JobExecution finished =
+                    execution.transition(retry ? "READY" : businessFailure == null ? "SUCCEEDED" : "FAILED", instanceId,
+                        identity.runId(), invocation.dispatchToken(), completed, retryAt, execution.attempt(), detail);
                 long next = Long.parseLong(state.get("next"));
                 if (!retry && !execution.executionId().startsWith("manual-")) {
                     next = next(registration.schedule, registration.cronExpression, execution.scheduledAt(), completed);
@@ -544,11 +626,12 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
                     leaseLost(invocation, started);
                     return null;
                 }
-                executions.save(registration.id, execution.executionId() + ":" + execution.attempt(), registration.policy.resultTtl(),
-                        new TaskResult(registration.id, Instant.ofEpochMilli(execution.scheduledAt()).toString(),
-                                Instant.ofEpochMilli(started).toString(), Instant.ofEpochMilli(completed).toString(),
-                                instanceId, businessFailure == null, detail, identity.runId(), execution.executionId(),
-                                execution.attempt(), businessFailure == null ? "SUCCEEDED" : "FAILED"));
+                executions.save(registration.id, execution.executionId() + ":" + execution.attempt(),
+                    registration.policy.resultTtl(),
+                    new TaskResult(registration.id, Instant.ofEpochMilli(execution.scheduledAt()).toString(),
+                        Instant.ofEpochMilli(started).toString(), Instant.ofEpochMilli(completed).toString(),
+                        instanceId, businessFailure == null, detail, identity.runId(), execution.executionId(),
+                        execution.attempt(), businessFailure == null ? "SUCCEEDED" : "FAILED"));
                 due.refreshDueIndex(registration.id, state);
                 return null;
             });
@@ -556,7 +639,8 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             logDispatchFailure(registration, error);
         } finally {
             registration.runner = null;
-            if (activeAttempts.remove(invocation.dispatchToken()) != null) jobActive.get(invocation.jobId()).decrementAndGet();
+            if (activeAttempts.remove(invocation.dispatchToken()) != null)
+                jobActive.get(invocation.jobId()).decrementAndGet();
             capacity.release();
             jobSlot.release();
             releaseReservation(instanceId, identity.runId(), invocation.dispatchToken());
@@ -564,8 +648,7 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     }
 
     /**
-     * Redis 故障不是任务业务失败，不能伪装成任务执行失败记录。
-     * 同时对基础设施异常限频，避免 Redis 故障期间每个轮询周期刷屏。
+     * Redis 故障不是任务业务失败，不能伪装成任务执行失败记录。 同时对基础设施异常限频，避免 Redis 故障期间每个轮询周期刷屏。
      */
     private void logDispatchFailure(Registration registration, Exception error) {
         logDispatchFailure(registration.id, registration.displayName, error);
@@ -573,17 +656,14 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
 
     private void logDispatchFailure(String taskId, String displayName, Exception error) {
         if (error instanceof RdtException failure
-                && (failure.code() == RdtErrorCode.REDIS_OPERATION
-                || failure.code() == RdtErrorCode.REDIS_TIMEOUT)) {
+            && (failure.code() == RdtErrorCode.REDIS_OPERATION || failure.code() == RdtErrorCode.REDIS_TIMEOUT)) {
             long now = System.nanoTime();
             long last = lastRedisFailureLogNanos.get();
             boolean firstLog = last == 0 && lastRedisFailureLogNanos.compareAndSet(0, now);
-            boolean periodicLog = last != 0
-                    && now - last >= REDIS_FAILURE_LOG_INTERVAL_NANOS
-                    && lastRedisFailureLogNanos.compareAndSet(last, now);
+            boolean periodicLog = last != 0 && now - last >= REDIS_FAILURE_LOG_INTERVAL_NANOS
+                && lastRedisFailureLogNanos.compareAndSet(last, now);
             if (firstLog || periodicLog) {
-                log.warn("Task dispatch paused by Redis failure id={} name={}",
-                        taskId, displayName, error);
+                log.warn("Task dispatch paused by Redis failure id={} name={}", taskId, displayName, error);
             }
             return;
         }
@@ -600,8 +680,8 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
 
     private long next(ScheduleSpec schedule, CronSchedule cronExpression, long scheduled, long now) {
         return switch (schedule) {
-            case ScheduleSpec.FixedRate(Duration period, Duration initial) ->
-                    Math.addExact(scheduled, Math.multiplyExact((now - scheduled) / period.toMillis() + 1, period.toMillis()));
+            case ScheduleSpec.FixedRate(Duration period, Duration initial) -> Math.addExact(scheduled,
+                Math.multiplyExact((now - scheduled) / period.toMillis() + 1, period.toMillis()));
             case ScheduleSpec.FixedDelay(Duration delay, Duration initial) -> Math.addExact(now, delay.toMillis());
             case ScheduleSpec.Cron cron -> cronNext(cronExpression, cron.zone(), now);
         };
@@ -632,25 +712,26 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
 
     private long now() {
         return RedisSupport.redis("read Redis clock", () -> client.getScript(StringCodec.INSTANCE)
-                .eval(RScript.Mode.READ_ONLY, REDIS_TIME, RScript.ReturnType.LONG, List.of()));
+            .eval(RScript.Mode.READ_ONLY, REDIS_TIME, RScript.ReturnType.LONG, List.of()));
     }
 
     /**
      * 确保任务在 Redis 中拥有完整且可解析的持久化状态。
      *
-     * <p>任务定义和下一次触发时间属于同一个状态契约。人工清理可能只删除
-     * 其中一个字段，因此注册阶段不能只通过 {@code definition} 判断任务是否完整。</p>
+     * <p>
+     * 任务定义和下一次触发时间属于同一个状态契约。人工清理可能只删除 其中一个字段，因此注册阶段不能只通过 {@code definition} 判断任务是否完整。
+     * </p>
      *
-     * <p>定义冲突默认拒绝覆盖；配置为 {@code UPDATE} 时，使用新定义重置下一次触发时间。
-     * 缺失定义时视为全新任务；定义一致但 {@code next} 缺失或非法时只修复水位，
-     * 不影响展示名称和结果记录。</p>
+     * <p>
+     * 定义冲突默认拒绝覆盖；配置为 {@code UPDATE} 时，使用新定义重置下一次触发时间。 缺失定义时视为全新任务；定义一致但 {@code next} 缺失或非法时只修复水位， 不影响展示名称和结果记录。
+     * </p>
      *
      * @param registration 本地任务注册信息
      * @param state Redis 中的任务状态
      * @return 当前有效的调度状态
      */
     private ScheduleState ensureScheduleState(Registration registration, RMap<String, String> state,
-                                              boolean registering) {
+        boolean registering) {
         if ("true".equals(state.get("retired"))) {
             RdtSupport.require(!registering, "Task has been globally retired: " + registration.id);
             return new ScheduleState(Long.MAX_VALUE, false);
@@ -658,8 +739,8 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
 
         String fingerprint = fingerprint(registration);
         // 只有会改变触发行为的策略参与集群一致性检查；展示名、结果 TTL 和注册时的更新许可不参与。
-        String policy = registration.policy.failureMode() + ":" + registration.policy.retry()
-                + ":" + registration.policy.misfirePolicy() + ":" + registration.policy.misfireThreshold();
+        String policy = registration.policy.failureMode() + ":" + registration.policy.retry() + ":"
+            + registration.policy.misfirePolicy() + ":" + registration.policy.misfireThreshold();
         String policyFingerprint = policy + ":" + registration.route + ":" + registration.targetInstanceId;
         String existing = RedisSupport.redis("read schedule definition", () -> state.get("definition"));
         String existingPolicy = RedisSupport.redis("read schedule policy", () -> state.get("policy"));
@@ -672,19 +753,18 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
             }
             if (registration.policy.definitionChangePolicy() == ScheduleDefinitionChangePolicy.FAIL) {
                 RdtSupport.require(false,
-                        "Conflicting schedule definition; use rdt.schedule.definition-change-policy=UPDATE "
-                                + "to refresh task ID: " + registration.id);
+                    "Conflicting schedule definition; use rdt.schedule.definition-change-policy=UPDATE "
+                        + "to refresh task ID: " + registration.id);
             }
             JobExecution active = executions.execution(state);
-            RdtSupport.require(active == null || active.terminal(), "Cannot update an active job definition: " + registration.id);
+            RdtSupport.require(active == null || active.terminal(),
+                "Cannot update an active job definition: " + registration.id);
             long now = now();
             long initial = initial(registration.schedule, registration.cronExpression, now);
-            RedisSupport.redisRun("update schedule definition", () -> state.putAll(Map.of(
-                    "definition", fingerprint,
-                    "policy", policyFingerprint,
-                    "next", Long.toString(initial))));
-            log.info("Task schedule updated id={} name={} oldDefinition={} newDefinition={}",
-                    registration.id, registration.displayName, existing, fingerprint);
+            RedisSupport.redisRun("update schedule definition", () -> state.putAll(
+                Map.of("definition", fingerprint, "policy", policyFingerprint, "next", Long.toString(initial))));
+            log.info("Task schedule updated id={} name={} oldDefinition={} newDefinition={}", registration.id,
+                registration.displayName, existing, fingerprint);
             return new ScheduleState(initial, true);
         }
         String rawNext = RedisSupport.redis("read schedule watermark", () -> state.get("next"));
@@ -692,17 +772,14 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         if (existing == null) {
             long now = now();
             long initial = initial(registration.schedule, registration.cronExpression, now);
-            RedisSupport.redisRun("initialize schedule", () -> state.putAll(Map.of(
-                    "definition", fingerprint,
-                    "policy", policyFingerprint,
-                    "next", Long.toString(initial))));
+            RedisSupport.redisRun("initialize schedule", () -> state.putAll(
+                Map.of("definition", fingerprint, "policy", policyFingerprint, "next", Long.toString(initial))));
             return new ScheduleState(initial, true);
         }
         if (next == null) {
             long now = now();
             long initial = initial(registration.schedule, registration.cronExpression, now);
-            RedisSupport.redisRun("repair schedule watermark", () ->
-                    state.fastPut("next", Long.toString(initial)));
+            RedisSupport.redisRun("repair schedule watermark", () -> state.fastPut("next", Long.toString(initial)));
             return new ScheduleState(initial, true);
         }
         if (existingPolicy == null) {
@@ -732,7 +809,9 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
     }
 
     @Override
-    public List<TaskResult> results(String taskId,int offset,int limit) { return executions.results(taskId,offset,limit); }
+    public List<TaskResult> results(String taskId, int offset, int limit) {
+        return executions.results(taskId, offset, limit);
+    }
 
     @Override
     public void close() {
@@ -765,8 +844,11 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         private final AtomicInteger renewalFailures = new AtomicInteger();
         private final AtomicBoolean fenced = new AtomicBoolean();
         private volatile long deadlineNanos;
+
         private ActiveAttempt(JobInvocation invocation, BooleanSupplier owner, long leaseMillis) {
-            this.invocation=invocation; this.owner=owner; deadlineNanos=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(leaseMillis);
+            this.invocation = invocation;
+            this.owner = owner;
+            deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(leaseMillis);
         }
     }
 
@@ -786,8 +868,8 @@ public final class RedissonScheduledTaskTemplate implements ScheduledTaskTemplat
         private JobRoute route = JobRoute.HEALTH_FIRST;
         private String targetInstanceId = "";
 
-        private Registration(String id, String displayName, ScheduleSpec schedule,
-                             CronSchedule cronExpression, SchedulePolicy policy, ContextualTask task) {
+        private Registration(String id, String displayName, ScheduleSpec schedule, CronSchedule cronExpression,
+            SchedulePolicy policy, ContextualTask task) {
             this.id = id;
             this.displayName = displayName.isBlank() ? id : displayName;
             this.schedule = schedule;

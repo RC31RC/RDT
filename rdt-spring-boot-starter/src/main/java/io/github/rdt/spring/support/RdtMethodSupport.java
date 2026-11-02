@@ -45,22 +45,23 @@ public final class RdtMethodSupport implements EnvironmentAware {
     }
 
     /** 创建方法调用基础设施，支持参数位置和参数名称。 */
-    public RdtMethodSupport() { }
+    public RdtMethodSupport() {}
 
     /**
      * 解析 Spring 代理背后的实现方法。
+     *
      * @param joinPoint 被拦截的方法调用
      * @return 解析桥接后的实现方法
      */
     public Method method(ProceedingJoinPoint joinPoint) {
-        Method signature = ((MethodSignature) joinPoint.getSignature()).getMethod();
-        return BridgeMethodResolver.findBridgedMethod(AopUtils.getMostSpecificMethod(signature,
-                AopProxyUtils.ultimateTargetClass(joinPoint.getTarget())));
+        Method signature = ((MethodSignature)joinPoint.getSignature()).getMethod();
+        return BridgeMethodResolver.findBridgedMethod(
+            AopUtils.getMostSpecificMethod(signature, AopProxyUtils.ultimateTargetClass(joinPoint.getTarget())));
     }
 
     /**
-     * 计算非空键，支持 #p0、#a0、参数名称和 #result。
-     * 表达式属于应用代码，不得来自不可信的请求字符串。
+     * 计算非空键，支持 #p0、#a0、参数名称和 #result。 表达式属于应用代码，不得来自不可信的请求字符串。
+     *
      * @param expression SpEL 表达式
      * @param method 已解析的方法
      * @param target 调用目标对象
@@ -87,6 +88,7 @@ public final class RdtMethodSupport implements EnvironmentAware {
 
     /**
      * 解析注解中的时长。
+     *
      * @param value ISO-8601、Spring Boot 简写时长或配置占位符；空字符串继承默认值
      * @param fallback 继承的默认时长，可以为 null
      * @return 解析后的时长
@@ -94,8 +96,7 @@ public final class RdtMethodSupport implements EnvironmentAware {
     public Duration duration(String value, Duration fallback) {
         String resolved = resolve(value).trim();
         try {
-            return resolved.isBlank() ? fallback
-                    : DurationStyle.detectAndParse(resolved);
+            return resolved.isBlank() ? fallback : DurationStyle.detectAndParse(resolved);
         } catch (IllegalArgumentException e) {
             throw new RdtConfigurationException("Invalid duration: " + value, e);
         }
@@ -103,18 +104,22 @@ public final class RdtMethodSupport implements EnvironmentAware {
 
     /**
      * 拒绝不支持的公开方法契约，防止异步业务未完成时提前释放锁。
+     *
      * @param method 待校验的方法
      */
     public void validate(Method method) {
         Class<?> result = method.getReturnType();
-        RdtSupport.require(Modifier.isPublic(method.getModifiers()) && !Modifier.isStatic(method.getModifiers())
-                && !Modifier.isFinal(method.getModifiers()), "RDT methods must be public, nonstatic and nonfinal: " + method);
+        RdtSupport.require(
+            Modifier.isPublic(method.getModifiers()) && !Modifier.isStatic(method.getModifiers())
+                && !Modifier.isFinal(method.getModifiers()),
+            "RDT methods must be public, nonstatic and nonfinal: " + method);
         RdtSupport.require(!CompletionStage.class.isAssignableFrom(result) && !Future.class.isAssignableFrom(result)
-                && !Publisher.class.isAssignableFrom(result), "RDT only supports synchronous methods: " + method);
+            && !Publisher.class.isAssignableFrom(result), "RDT only supports synchronous methods: " + method);
     }
 
     /**
      * 通过原始 Bean 代理调用，不使用 setAccessible，并保留业务异常。
+     *
      * @param bean 包含增强器的 Spring Bean
      * @param method 公开的实现方法
      * @param args 调用参数

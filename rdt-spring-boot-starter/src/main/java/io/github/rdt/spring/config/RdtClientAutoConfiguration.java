@@ -14,7 +14,7 @@ import org.springframework.context.annotation.Bean;
 
 /** Owns purpose-specific clients, without replacing or rewriting native Redisson configuration. */
 @AutoConfiguration(beforeName = {"org.redisson.spring.starter.RedissonAutoConfigurationV4",
-        "org.redisson.spring.starter.RedissonAutoConfigurationV2"})
+    "org.redisson.spring.starter.RedissonAutoConfigurationV2"})
 @ConditionalOnProperty(prefix = "rdt", name = "enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(RdtRedisProperties.class)
 public class RdtClientAutoConfiguration {
@@ -30,11 +30,12 @@ public class RdtClientAutoConfiguration {
     public RedissonClient rdtCacheRedis(RdtRedisProperties properties) {
         return Redisson.create(properties.cache().redisson());
     }
+
     static final class CacheConfigured implements Condition {
         @Override
         public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
             return context.getEnvironment().containsProperty("rdt.redis.cache.config")
-                    || context.getEnvironment().containsProperty("rdt.redis.cache.file");
+                || context.getEnvironment().containsProperty("rdt.redis.cache.file");
         }
     }
 }

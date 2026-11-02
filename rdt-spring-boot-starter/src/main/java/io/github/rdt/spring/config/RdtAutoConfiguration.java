@@ -13,6 +13,7 @@ import io.github.rdt.idempotency.IdempotencyTemplate;
 import io.github.rdt.lock.DefaultLockManager;
 import io.github.rdt.lock.DistributedLockManager;
 import io.github.rdt.lock.DistributedLockTemplate;
+import io.github.rdt.lock.LockOrder;
 import io.github.rdt.queue.FailedMessageStore;
 import io.github.rdt.queue.RdtMessageSendManager;
 import io.github.rdt.queue.MessageQueueTemplate;
@@ -68,21 +69,26 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.core.env.Environment;
 
 /** Uses purpose-specific Redis clients; each component backs off for application-owned beans. */
-@AutoConfiguration(after = RdtClientAutoConfiguration.class, afterName = {"org.redisson.spring.starter.RedissonAutoConfigurationV4",
+@AutoConfiguration(after = RdtClientAutoConfiguration.class,
+    afterName = {"org.redisson.spring.starter.RedissonAutoConfigurationV4",
         "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration"})
 @ConditionalOnClass(RedissonClient.class)
 @ConditionalOnBean(RedissonClient.class)
 @ConditionalOnProperty(prefix = "rdt", name = "enabled", havingValue = "true", matchIfMissing = true)
-@EnableConfigurationProperties({RdtProperties.class, RdtInstanceProperties.class, RdtComponentProperties.class, RdtAdmissionProperties.class})
+@EnableConfigurationProperties({RdtProperties.class, RdtInstanceProperties.class, RdtComponentProperties.class,
+    RdtAdmissionProperties.class})
 @EnableAspectJAutoProxy(proxyTargetClass = true)
 public class RdtAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(io.github.rdt.schedule.CronParser.class)
-    public io.github.rdt.schedule.CronParser rdtCronParser() { return new io.github.rdt.spring.schedule.SpringCronParser(); }
+    public io.github.rdt.schedule.CronParser rdtCronParser() {
+        return new io.github.rdt.spring.schedule.SpringCronParser();
+    }
 
     @Bean
-    public RdtStartupSummary rdtStartupSummary(Map<String, RedissonClient> clients,RdtClientRouter router,RdtProperties properties) {
-        return new RdtStartupSummary(clients,router,properties);
+    public RdtStartupSummary rdtStartupSummary(Map<String, RedissonClient> clients, RdtClientRouter router,
+        RdtProperties properties) {
+        return new RdtStartupSummary(clients, router, properties);
     }
 
     @Bean
@@ -91,10 +97,11 @@ public class RdtAutoConfiguration {
         MeterRegistry registry = registries.getIfAvailable();
         return registry == null ? RdtMetrics.NONE : new MicrometerRdtMetrics(registry);
     }
+
     @Bean(initMethod = "start", destroyMethod = "close")
     @ConditionalOnMissingBean
     public RdtPressureMonitor rdtPressureMonitor(RdtAdmissionProperties properties, RuntimeIdentity identity,
-                                                 ObjectProvider<DatabasePressureProbe> databases) {
+        ObjectProvider<DatabasePressureProbe> databases) {
         return new RdtPressureMonitor(properties, identity, databases.orderedStream().toList());
     }
 
@@ -131,39 +138,41 @@ public class RdtAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(RdtMessageSendManager.class)
     public RdtMessageSendManager rdtMessageSendManager(ObjectProvider<MessageQueueTemplate> transports,
-            ObjectProvider<OutboxStore> stores, JsonCodec json, KeySpace keys) {
+        ObjectProvider<OutboxStore> stores, JsonCodec json, KeySpace keys) {
         return new DefaultMessageSendManager(transports, stores, json, keys);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public RedisOwnerLeaseService rdtOwnerLeases(
-            RdtClientRouter clients, KeySpace keys, DistributedLockTemplate locks) {
+    public RedisOwnerLeaseService rdtOwnerLeases(RdtClientRouter clients, KeySpace keys,
+        DistributedLockTemplate locks) {
         return new RedisOwnerLeaseService(clients.runtime(), keys, locks);
     }
 
     @Bean(destroyMethod = "close")
     @ConditionalOnMissingBean
-    public NodeIdentityLease rdtNodeIdentity(
-            RedisOwnerLeaseService leases, RdtProperties properties,
-            RdtInstanceProperties instance, ObjectProvider<RdtAnnotationRegistrar> registrar,
-            ObjectProvider<NodeIdentityListener> listeners, RuntimeIdentity identity) {
-        return new NodeIdentityLease(leases, properties, instance, registrar,
-                () -> listeners.orderedStream().toList(), identity);
+    public NodeIdentityLease rdtNodeIdentity(RedisOwnerLeaseService leases, RdtProperties properties,
+        RdtInstanceProperties instance, ObjectProvider<RdtAnnotationRegistrar> registrar,
+        ObjectProvider<NodeIdentityListener> listeners, RuntimeIdentity identity) {
+        return new NodeIdentityLease(leases, properties, instance, registrar, () -> listeners.orderedStream().toList(),
+            identity);
     }
 
     @Bean(destroyMethod = "stop")
     @ConditionalOnMissingBean
     public RdtRuntimeRegistry rdtRuntimeRegistry(RdtClientRouter clients, KeySpace keys, JsonCodec json,
-                                                 RdtProperties properties, RdtInstanceProperties instance,
-                                                 Environment environment, RuntimeIdentity identity, RdtMetrics metrics, RetryClassifier retryClassifier) {
-        return new RdtRuntimeRegistry(clients.runtime(), keys, json, properties, instance, environment, identity, metrics);
+        RdtProperties properties, RdtInstanceProperties instance, Environment environment, RuntimeIdentity identity,
+        RdtMetrics metrics, RetryClassifier retryClassifier) {
+        return new RdtRuntimeRegistry(clients.runtime(), keys, json, properties, instance, environment, identity,
+            metrics);
     }
+
     /** 创建自动配置实例。 */
-    public RdtAutoConfiguration() { }
+    public RdtAutoConfiguration() {}
 
     /**
      * 返回命名空间。
+     *
      * @param properties 应用配置
      * @return 命名空间
      */
@@ -175,6 +184,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回显式类型的 JSON 载荷编解码器。
+     *
      * @return 显式类型的 JSON 载荷编解码器
      */
     @Bean
@@ -185,6 +195,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回共享代理及 SpEL 支持组件。
+     *
      * @return 共享代理及 SpEL 支持组件
      */
     @Bean
@@ -195,6 +206,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回分布式锁模板。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param properties 默认配置
@@ -209,19 +221,21 @@ public class RdtAutoConfiguration {
     }
 
     /**
-     * 返回同步调用作用域锁管理器。Manager 是无状态单例，锁状态只属于当前调用线程。
+     * 返回事务感知的同步调用锁管理器；可选的固定 LockOrder Bean 控制跨类型顺序。 锁状态只属于当前调用线程。
      *
      * @param locks 分布式锁模板
+     * @param order 使用模块提供的可选不可变跨类型锁顺序
      * @return 作用域锁管理器
      */
     @Bean
     @ConditionalOnMissingBean(DistributedLockManager.class)
-    public DistributedLockManager rdtLockManager(DistributedLockTemplate locks) {
-        return new TransactionalLockManager(new DefaultLockManager(locks));
+    public DistributedLockManager rdtLockManager(DistributedLockTemplate locks, ObjectProvider<LockOrder> order) {
+        return new TransactionalLockManager(new DefaultLockManager(locks, order.getIfAvailable()));
     }
 
     /**
      * 返回缓存服务。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param json 编解码器
@@ -231,8 +245,7 @@ public class RdtAutoConfiguration {
      */
     @Bean(destroyMethod = "close")
     @ConditionalOnMissingBean(CacheService.class)
-    public CacheService rdtCache(RdtClientRouter clients, KeySpace keys, JsonCodec json,
-                                         RdtProperties properties) {
+    public CacheService rdtCache(RdtClientRouter clients, KeySpace keys, JsonCodec json, RdtProperties properties) {
         DistributedLockTemplate cacheLocks = new RedissonLockTemplate(clients.cache(), keys);
         var cache = new RedissonCacheService(clients.cache(), keys, json, properties.cache().policy(), cacheLocks);
         properties.cache().regionPolicies().forEach(cache::region);
@@ -265,6 +278,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回ID 分配器。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param properties 配置
@@ -292,6 +306,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回限流模板。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param properties 配置
@@ -305,6 +320,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回原子操作工具。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @return 原子操作工具
@@ -317,6 +333,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回持久化死信存储。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param json 编解码器
@@ -324,16 +341,14 @@ public class RdtAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean(FailedMessageStore.class)
-    public RedisFailedMessageStore rdtFailedMessageStore(
-            RdtClientRouter clients,
-            KeySpace keys,
-            JsonCodec json,
-            RdtProperties properties) {
+    public RedisFailedMessageStore rdtFailedMessageStore(RdtClientRouter clients, KeySpace keys, JsonCodec json,
+        RdtProperties properties) {
         return new RedisFailedMessageStore(clients.runtime(), keys, json, properties.queue().deadLetterTtl());
     }
 
     /**
      * 返回消息传输模式。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param json 编解码器
@@ -346,14 +361,17 @@ public class RdtAutoConfiguration {
     @ConditionalOnMissingBean(MessageQueueTemplate.class)
     @ConditionalOnProperty(prefix = "rdt.queue", name = "enabled", havingValue = "true", matchIfMissing = true)
     public MessageQueueTemplate rdtMessages(RdtClientRouter clients, KeySpace keys, JsonCodec json,
-                                                    RdtProperties properties, DistributedLockTemplate locks, FailedMessageStore failures, RuntimeIdentity identity, RdtMetrics metrics, RetryClassifier retryClassifier) {
-        var queue = new RedissonMessageQueueTemplate(clients.runtime(), keys, json, properties.queue().policy(), locks, failures, identity, retryClassifier);
+        RdtProperties properties, DistributedLockTemplate locks, FailedMessageStore failures, RuntimeIdentity identity,
+        RdtMetrics metrics, RetryClassifier retryClassifier) {
+        var queue = new RedissonMessageQueueTemplate(clients.runtime(), keys, json, properties.queue().policy(), locks,
+            failures, identity, retryClassifier);
         queue.metrics(metrics);
         return queue;
     }
 
     /**
      * 返回调度模板。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param json 编解码器
@@ -365,14 +383,17 @@ public class RdtAutoConfiguration {
     @ConditionalOnMissingBean(ScheduledTaskTemplate.class)
     @ConditionalOnProperty(prefix = "rdt.schedule", name = "enabled", havingValue = "true", matchIfMissing = true)
     public ScheduledTaskTemplate rdtScheduler(RdtClientRouter clients, KeySpace keys, JsonCodec json,
-                                                     DistributedLockTemplate locks, RdtProperties properties, RuntimeIdentity identity, RdtMetrics metrics, io.github.rdt.schedule.CronParser crons, RetryClassifier retryClassifier) {
-        var scheduler = new RedissonScheduledTaskTemplate(clients.runtime(), keys, json, locks, properties.schedule().settings(), crons, identity, retryClassifier);
+        DistributedLockTemplate locks, RdtProperties properties, RuntimeIdentity identity, RdtMetrics metrics,
+        io.github.rdt.schedule.CronParser crons, RetryClassifier retryClassifier) {
+        var scheduler = new RedissonScheduledTaskTemplate(clients.runtime(), keys, json, locks,
+            properties.schedule().settings(), crons, identity, retryClassifier);
         scheduler.metrics(metrics);
         return scheduler;
     }
 
     /**
      * 返回锁切面。
+     *
      * @param properties 默认配置
      * @return 锁切面
      */
@@ -384,6 +405,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回限流切面。
+     *
      * @param limiter 功能模板
      * @param properties 默认配置
      * @param methods 公共支持组件
@@ -391,12 +413,14 @@ public class RdtAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    public RdtRateLimitAspect rdtRateLimitAspect(RateLimiterTemplate limiter, RdtProperties properties, RdtMethodSupport methods) {
+    public RdtRateLimitAspect rdtRateLimitAspect(RateLimiterTemplate limiter, RdtProperties properties,
+        RdtMethodSupport methods) {
         return new RdtRateLimitAspect(limiter, properties, methods);
     }
 
     /**
      * 返回缓存切面。
+     *
      * @param cache 功能模板
      * @param locks 分布式锁模板
      * @param methods 公共支持组件
@@ -410,6 +434,7 @@ public class RdtAutoConfiguration {
 
     /**
      * 返回生命周期注册器。
+     *
      * @param beans Bean 工厂
      * @param queues 可选消息传输模板
      * @param scheduler 可选调度模板
@@ -420,8 +445,8 @@ public class RdtAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public RdtAnnotationRegistrar rdtAnnotationRegistrar(ConfigurableListableBeanFactory beans,
-            ObjectProvider<MessageQueueTemplate> queues, ObjectProvider<ScheduledTaskTemplate> scheduler,
-            RdtMethodSupport methods, JsonCodec json, RdtProperties properties, RdtComponentProperties components) {
+        ObjectProvider<MessageQueueTemplate> queues, ObjectProvider<ScheduledTaskTemplate> scheduler,
+        RdtMethodSupport methods, JsonCodec json, RdtProperties properties, RdtComponentProperties components) {
         return new RdtAnnotationRegistrar(beans, queues, scheduler, methods, json, properties, components);
     }
 

@@ -17,7 +17,7 @@ public final class RedissonCounterStore implements CounterStore {
 
     @Override
     public long increment(String key, long delta) {
-        return RedisSupport.redis("increment distributed counter", () ->
-                client.getAtomicLong(keys.key("cache-counter", key)).addAndGet(delta));
+        return RedisSupport.redis("increment distributed counter",
+            () -> client.getAtomicLong(keys.key("cache-counter", key)).addAndGet(delta));
     }
 }

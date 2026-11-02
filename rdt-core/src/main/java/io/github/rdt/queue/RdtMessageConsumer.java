@@ -10,8 +10,9 @@ public interface RdtMessageConsumer<T extends MessageDescriptor<?>> {
     /**
      * 同步消费一条消息。
      *
-     * <p>方法正常返回后 RDT 才会确认可靠消息；异常只有通过应用配置的 RetryClassifier 且仍有预算时才重试，
-     * 其余失败进入死信。业务副作用仍需使用消息 ID 或业务唯一键保证幂等。</p>
+     * <p>
+     * 方法正常返回后 RDT 才会确认可靠消息；异常只有通过应用配置的 RetryClassifier 且仍有预算时才重试， 其余失败进入死信。业务副作用仍需使用消息 ID 或业务唯一键保证幂等。
+     * </p>
      *
      * @param payload 反序列化并恢复传输元数据后的业务消息描述符
      */

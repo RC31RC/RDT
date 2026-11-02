@@ -21,6 +21,7 @@ public final class RedisFailedMessageStore implements FailedMessageStore {
 
     /**
      * 创建 Redis 失败记录存储。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param json 编解码器
@@ -58,11 +59,11 @@ public final class RedisFailedMessageStore implements FailedMessageStore {
             if (retention.isZero()) {
                 client.<String, String>getMapCache(name, StringCodec.INSTANCE).put(field, json.write(failure));
             } else {
-                client.<String, String>getMapCache(name, StringCodec.INSTANCE)
-                        .fastPut(field, json.write(failure), retention.toMillis(), TimeUnit.MILLISECONDS);
+                client.<String, String>getMapCache(name, StringCodec.INSTANCE).fastPut(field, json.write(failure),
+                    retention.toMillis(), TimeUnit.MILLISECONDS);
             }
             new ManagementIndex(client, keys).record("dead-letters",
-                    json.write(new String[]{failure.destination(), field}), System.currentTimeMillis(), retention);
+                json.write(new String[] {failure.destination(), field}), System.currentTimeMillis(), retention);
         });
     }
 }

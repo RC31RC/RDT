@@ -23,14 +23,14 @@ public final class OutboxRelay implements AutoCloseable {
     private final String namespace;
     private final RdtConsistencyProperties properties;
     private final RetryPolicy retry;
-    private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().daemon().name("rdt-outbox-relay").factory());
+    private final ScheduledExecutorService timer =
+        Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("rdt-outbox-relay").factory());
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    public OutboxRelay(OutboxStore store, MessageQueueTemplate messages, RuntimeIdentity identity,
-                       String namespace, RdtConsistencyProperties properties) {
+    public OutboxRelay(OutboxStore store, MessageQueueTemplate messages, RuntimeIdentity identity, String namespace,
+        RdtConsistencyProperties properties) {
         this.store = store;
         this.messages = messages;
         this.identity = identity;
@@ -43,7 +43,7 @@ public final class OutboxRelay implements AutoCloseable {
         RdtSupport.require(!closed.get(), "Outbox relay is closed");
         if (started.compareAndSet(false, true)) {
             timer.scheduleWithFixedDelay(this::tick, properties.relayInterval().toMillis(),
-                    properties.relayInterval().toMillis(), TimeUnit.MILLISECONDS);
+                properties.relayInterval().toMillis(), TimeUnit.MILLISECONDS);
         }
     }
 
@@ -52,17 +52,21 @@ public final class OutboxRelay implements AutoCloseable {
             relayOnce();
         } catch (RuntimeException error) {
             // A scheduler exception must not permanently suppress future runs; expired claims recover.
-            if (!closed.get()) log.error("Outbox relay failed namespace={}; claims recover after lease expiry", namespace, error);
+            if (!closed.get())
+                log.error("Outbox relay failed namespace={}; claims recover after lease expiry", namespace, error);
         }
     }
 
     public void relayOnce() {
-        if (closed.get() || !identity.acceptingNewWork() || !running.compareAndSet(false, true)) return;
+        if (closed.get() || !identity.acceptingNewWork() || !running.compareAndSet(false, true))
+            return;
         try {
             for (int i = 0; i < properties.batchSize() && !closed.get() && identity.acceptingNewWork(); i++) {
                 // Claim one at a time: slow sends must not consume leases of unsent batch members.
-                var rows = store.claim(namespace, identity.instanceId() + ":" + identity.runId(), 1, properties.claimLease());
-                if (rows.isEmpty() || closed.get() || !identity.acceptingNewWork()) return;
+                var rows =
+                    store.claim(namespace, identity.instanceId() + ":" + identity.runId(), 1, properties.claimLease());
+                if (rows.isEmpty() || closed.get() || !identity.acceptingNewWork())
+                    return;
                 OutboxRecord row = rows.getFirst();
                 try {
                     messages.sendMessage(row.destination(), row.message(), row.queueMode());
@@ -70,7 +74,8 @@ public final class OutboxRelay implements AutoCloseable {
                     int failures = row.failureCount() + 1;
                     if (failures >= properties.maxAttempts()) {
                         store.markDead(row, error.toString());
-                        log.error("Outbox DEAD namespace={} outboxId={} destination={}", namespace, row.id(), row.destination(), error);
+                        log.error("Outbox DEAD namespace={} outboxId={} destination={}", namespace, row.id(),
+                            row.destination(), error);
                     } else {
                         store.reschedule(row, retry.delayAfter(failures), error.toString());
                     }

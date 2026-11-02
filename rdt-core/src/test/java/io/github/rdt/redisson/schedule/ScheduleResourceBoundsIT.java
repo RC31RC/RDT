@@ -46,8 +46,8 @@ class ScheduleResourceBoundsIT {
     @BeforeEach
     void connect() {
         var config = new Config().setThreads(2).setNettyThreads(2);
-        config.useSingleServer().setAddress(System.getProperty("rdt.it.redis"))
-                .setConnectionMinimumIdleSize(1).setConnectionPoolSize(8);
+        config.useSingleServer().setAddress(System.getProperty("rdt.it.redis")).setConnectionMinimumIdleSize(1)
+            .setConnectionPoolSize(8);
         client = Redisson.create(config);
     }
 
@@ -61,11 +61,13 @@ class ScheduleResourceBoundsIT {
     void abandonedMailboxIsBoundedAndExpiresWithoutAWorker() {
         var mailbox = new JobMailbox(client, keys, json);
         mailbox.send("gone", "old-run", new JobInvocation("job", "one", "token"), Duration.ofMillis(200), 1);
-        assertThatThrownBy(() -> mailbox.send("gone", "old-run", new JobInvocation("job", "two", "token"), Duration.ofMillis(200), 1))
-                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(
+            () -> mailbox.send("gone", "old-run", new JobInvocation("job", "two", "token"), Duration.ofMillis(200), 1))
+            .isInstanceOf(RuntimeException.class);
         String key = keys.key("job-worker", "gone:old-run");
         assertThat(client.getList(key, StringCodec.INSTANCE).remainTimeToLive()).isPositive();
-        await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> assertThat(client.getKeys().countExists(key)).isZero());
+        await().atMost(Duration.ofSeconds(2))
+            .untilAsserted(() -> assertThat(client.getKeys().countExists(key)).isZero());
     }
 
     @Test
@@ -103,8 +105,10 @@ class ScheduleResourceBoundsIT {
     void historiesBodiesAndAllIndexesAreCappedAndExpireAfterLastWrite() {
         var repository = new JobExecutionRepository(client, keys, json, Duration.ofMillis(800), 4);
         for (int i = 0; i < 10; i++) {
-            repository.archive(new JobExecution("e-" + i, "job", i, 1, "SUCCEEDED", "node", "run", "token", System.currentTimeMillis()+i, 0, "", 0));
-            repository.save("job", "r-" + i, Duration.ofMillis(800), new TaskResult("job", "now", "now", "now", "node", false, "failure", "run", "e-"+i, 1, "FAILED"));
+            repository.archive(new JobExecution("e-" + i, "job", i, 1, "SUCCEEDED", "node", "run", "token",
+                System.currentTimeMillis() + i, 0, "", 0));
+            repository.save("job", "r-" + i, Duration.ofMillis(800),
+                new TaskResult("job", "now", "now", "now", "node", false, "failure", "run", "e-" + i, 1, "FAILED"));
         }
         assertThat(client.getMap(keys.key("schedule-executions", "job")).size()).isEqualTo(4);
         assertThat(client.getMap(keys.key("schedule-results", "job")).size()).isEqualTo(4);
@@ -113,21 +117,23 @@ class ScheduleResourceBoundsIT {
         assertThat(index.resources("failures:job").size()).isEqualTo(4);
         assertThat(repository.results("job", 0, 10)).hasSize(4);
         assertThat(new RedissonManagementQueryService(client, keys, json).executions("job", 0, 10)).hasSize(4);
-        await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
-                assertThat(client.getKeys().getKeysByPattern("rdt:" + RdtSupport.component(keys.namespace()) + ":*")).isEmpty());
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(
+            () -> assertThat(client.getKeys().getKeysByPattern("rdt:" + RdtSupport.component(keys.namespace()) + ":*"))
+                .isEmpty());
     }
 
     @Test
     void queryingExpiredResultsAlsoReclaimsBodiesWhileNewerResultsRemainLive() {
         var repository = new JobExecutionRepository(client, keys, json, Duration.ofMinutes(1), 4);
-        var result = new TaskResult("job", "now", "now", "now", "node", false, "failure", "run", "execution", 1, "FAILED");
+        var result =
+            new TaskResult("job", "now", "now", "now", "node", false, "failure", "run", "execution", 1, "FAILED");
         repository.save("job", "expired", Duration.ofMinutes(1), result);
         repository.save("job", "live", Duration.ofMinutes(1), result);
         var index = new ManagementIndex(client, keys);
         index.expiries("attempts:job").add(1, "expired");
         assertThat(repository.results("job", 0, 10)).hasSize(1);
         assertThat(client.<String, String>getMap(keys.key("schedule-results", "job"), StringCodec.INSTANCE).keySet())
-                .containsExactly("live");
+            .containsExactly("live");
         assertThat(index.resources("failures:job").contains("expired")).isFalse();
         assertThat(index.expiries("failures:job").contains("expired")).isFalse();
     }
@@ -146,17 +152,22 @@ class ScheduleResourceBoundsIT {
     @Test
     void unregisteredHistoricalTasksNeverConsumeActiveTaskScanBudget() {
         var due = client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE);
-        for (int i = 0; i < 1024; i++) due.add(0, "orphan-" + i);
-        var policy = new SchedulePolicy(new RetryPolicy(1, Duration.ZERO, 1, Duration.ofSeconds(1)), Duration.ofSeconds(1),
-                ScheduleDefinitionChangePolicy.FAIL, ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ScheduleFailureMode.CONTINUE);
-        var settings = new SchedulerSettings(Duration.ofMillis(100), Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1, Duration.ofSeconds(3), policy, 4);
+        for (int i = 0; i < 1024; i++)
+            due.add(0, "orphan-" + i);
+        var policy = new SchedulePolicy(new RetryPolicy(1, Duration.ZERO, 1, Duration.ofSeconds(1)),
+            Duration.ofSeconds(1), ScheduleDefinitionChangePolicy.FAIL, ScheduleMisfirePolicy.FIRE_ONCE,
+            Duration.ofMinutes(1), ScheduleFailureMode.CONTINUE);
+        var settings = new SchedulerSettings(Duration.ofMillis(100), Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1,
+            Duration.ofSeconds(3), policy, 4);
         var identity = new RuntimeIdentity("worker");
         identity.acquired("token", 1, () -> true);
         var calls = new AtomicInteger();
         try (var scheduler = new RedissonScheduledTaskTemplate(client, keys, json,
-                new RedissonLockTemplate(client, keys), settings,
-                (expression, zone) -> { throw new AssertionError("No cron"); }, identity, RetryClassifier.infrastructureFailures())) {
-            scheduler.register("active", new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO), calls::incrementAndGet);
+            new RedissonLockTemplate(client, keys), settings, (expression, zone) -> {
+                throw new AssertionError("No cron");
+            }, identity, RetryClassifier.infrastructureFailures())) {
+            scheduler.register("active", new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO),
+                calls::incrementAndGet);
             await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(calls).hasValue(1));
         }
     }
@@ -164,26 +175,33 @@ class ScheduleResourceBoundsIT {
     @Test
     void globalRetirementRemovesSharedIndexesAndPreventsResurrection() {
         var lock = new RedissonLockTemplate(client, keys);
-        var policy = new SchedulePolicy(new RetryPolicy(1, Duration.ZERO, 1, Duration.ofSeconds(1)), Duration.ofSeconds(1),
-                ScheduleDefinitionChangePolicy.FAIL, ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ScheduleFailureMode.CONTINUE);
-        var settings = new SchedulerSettings(Duration.ofMillis(100), Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 2, Duration.ofSeconds(3), policy, 4);
+        var policy = new SchedulePolicy(new RetryPolicy(1, Duration.ZERO, 1, Duration.ofSeconds(1)),
+            Duration.ofSeconds(1), ScheduleDefinitionChangePolicy.FAIL, ScheduleMisfirePolicy.FIRE_ONCE,
+            Duration.ofMinutes(1), ScheduleFailureMode.CONTINUE);
+        var settings = new SchedulerSettings(Duration.ofMillis(100), Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 2,
+            Duration.ofSeconds(3), policy, 4);
         var identity = new RuntimeIdentity("worker");
         identity.acquired("token", 1, () -> true);
-        try (var scheduler = new RedissonScheduledTaskTemplate(client, keys, json, lock, settings,
-                (expression, zone) -> { throw new AssertionError("No cron in this test"); }, identity, RetryClassifier.infrastructureFailures())) {
+        try (var scheduler =
+            new RedissonScheduledTaskTemplate(client, keys, json, lock, settings, (expression, zone) -> {
+                throw new AssertionError("No cron in this test");
+            }, identity, RetryClassifier.infrastructureFailures())) {
             var spec = new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ofHours(1));
             var registration = scheduler.register("job", spec, () -> 1);
             registration.close();
-            assertThat(client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE).contains("job")).isTrue();
+            assertThat(client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE)
+                .contains("job")).isTrue();
             var commands = new RedissonManagementCommandService(client, keys, lock, json);
             assertThat(commands.retireTask("job")).isTrue();
             assertThat(new ManagementIndex(client, keys).resources("tasks").contains("job")).isFalse();
-            assertThat(client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE).contains("job")).isFalse();
+            assertThat(client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE)
+                .contains("job")).isFalse();
             assertThat(commands.triggerTask("job")).isFalse();
             assertThat(new RedissonManagementQueryService(client, keys, json).task("job")).isEmpty();
             assertThatThrownBy(() -> scheduler.register("job", spec, () -> 1)).isInstanceOf(RuntimeException.class);
-            assertThat(client.<String, String>getMap(keys.key("schedule-state", "job"), StringCodec.INSTANCE).readAllMap())
-                    .containsOnlyKeys("retired");
+            assertThat(
+                client.<String, String>getMap(keys.key("schedule-state", "job"), StringCodec.INSTANCE).readAllMap())
+                .containsOnlyKeys("retired");
         }
     }
 }

@@ -49,22 +49,11 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
     private final String componentId;
     private boolean removed;
 
-    BroadcastSubscriptionRuntime(
-            QueueSubscription spec,
-            MessageHandler handler,
-            RedissonClient client,
-            KeySpace keys,
-            JsonCodec json,
-            RuntimeIdentity identity,
-            QueuePolicy policy,
-            ExecutionBudget budget,
-            ScheduledExecutorService transfer,
-            MessageFailureRecorder failureRecorder,
-            RetryClassifier retryClassifier,
-            AtomicBoolean closed,
-            AtomicInteger volatileWaiting,
-            Consumer<QueueSubscription> drop,
-            Supplier<RdtMetrics> metrics) {
+    BroadcastSubscriptionRuntime(QueueSubscription spec, MessageHandler handler, RedissonClient client, KeySpace keys,
+        JsonCodec json, RuntimeIdentity identity, QueuePolicy policy, ExecutionBudget budget,
+        ScheduledExecutorService transfer, MessageFailureRecorder failureRecorder, RetryClassifier retryClassifier,
+        AtomicBoolean closed, AtomicInteger volatileWaiting, Consumer<QueueSubscription> drop,
+        Supplier<RdtMetrics> metrics) {
         this.client = client;
         this.keys = keys;
         this.json = json;
@@ -80,134 +69,92 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
         this.metrics = metrics;
         topic = client.getTopic(keys.key("topic", spec.destination()), StringCodec.INSTANCE);
         Semaphore listenerCapacity = new Semaphore(spec.concurrency());
-        listener =
-                RedisSupport.redis(
-                        "subscribe broadcast",
-                        () ->
-                                topic.addListener(
-                                        String.class,
-                                        (channel, raw) -> {
-                                            if (stopped.get()
-                                                    || !identity.accepting()
-                                                    || closed.get()) return;
-                                            if (!identity.acceptingNewWork()) {
-                                                drop.accept(spec);
-                                                return;
-                                            }
-                                            if (raw.getBytes(StandardCharsets.UTF_8).length > policy.maxMessageBytes()) {
-                                                drop.accept(spec);
-                                                return;
-                                            }
-                                            if (!listenerCapacity.tryAcquire()) {
-                                                drop.accept(spec);
-                                                return;
-                                            }
-                                            if (!budget.tryAcquireHandler()) {
-                                                listenerCapacity.release();
-                                                drop.accept(spec);
-                                                return;
-                                            }
-                                            if (!budget.tryReserve()) {
-                                                budget.releaseHandler();
-                                                listenerCapacity.release();
-                                                drop.accept(spec);
-                                                return;
-                                            }
-                                            try {
-                                                budget.submit(
-                                                        () -> {
-                                                            try {
-                                                                processVolatile(
-                                                                        spec,
-                                                                        policy.resolve(
-                                                                                spec.options()),
-                                                                        json.read(
-                                                                                raw, Message.class),
-                                                                        handler,
-                                                                        listenerCapacity,
-                                                                        stopped,
-                                                                        0);
-                                                            } catch (Exception e) {
-                                                                log.error(
-                                                                        "Broadcast delivery failed"
-                                                                            + " destination={}",
-                                                                        spec.destination(),
-                                                                        e);
-                                                            } finally {
-                                                                budget.release(1);
-                                                                budget.releaseHandler();
-                                                                listenerCapacity.release();
-                                                            }
-                                                        });
-                                            } catch (RuntimeException e) {
-                                                budget.release(1);
-                                                budget.releaseHandler();
-                                                listenerCapacity.release();
-                                                log.warn("Broadcast rejected during shutdown", e);
-                                            }
-                                        }));
+        listener = RedisSupport.redis("subscribe broadcast", () -> topic.addListener(String.class, (channel, raw) -> {
+            if (stopped.get() || !identity.accepting() || closed.get())
+                return;
+            if (!identity.acceptingNewWork()) {
+                drop.accept(spec);
+                return;
+            }
+            if (raw.getBytes(StandardCharsets.UTF_8).length > policy.maxMessageBytes()) {
+                drop.accept(spec);
+                return;
+            }
+            if (!listenerCapacity.tryAcquire()) {
+                drop.accept(spec);
+                return;
+            }
+            if (!budget.tryAcquireHandler()) {
+                listenerCapacity.release();
+                drop.accept(spec);
+                return;
+            }
+            if (!budget.tryReserve()) {
+                budget.releaseHandler();
+                listenerCapacity.release();
+                drop.accept(spec);
+                return;
+            }
+            try {
+                budget.submit(() -> {
+                    try {
+                        processVolatile(spec, policy.resolve(spec.options()), json.read(raw, Message.class), handler,
+                            listenerCapacity, stopped, 0);
+                    } catch (Exception e) {
+                        log.error("Broadcast delivery failed" + " destination={}", spec.destination(), e);
+                    } finally {
+                        budget.release(1);
+                        budget.releaseHandler();
+                        listenerCapacity.release();
+                    }
+                });
+            } catch (RuntimeException e) {
+                budget.release(1);
+                budget.releaseHandler();
+                listenerCapacity.release();
+                log.warn("Broadcast rejected during shutdown", e);
+            }
+        }));
         componentId = "listener:" + spec.listenerId();
-        identity.register(
-                componentId,
-                () ->
-                        new RuntimeComponent(
-                                "listener",
-                                spec.listenerId(),
-                                spec.destination(),
-                                spec.group(),
-                                "BROADCAST:" + policy.resolve(spec.options()),
-                                spec.concurrency(),
-                                spec.concurrency() - listenerCapacity.availablePermits(),
-                                0,
-                                0));
+        identity.register(componentId,
+            () -> new RuntimeComponent("listener", spec.listenerId(), spec.destination(), spec.group(),
+                "BROADCAST:" + policy.resolve(spec.options()), spec.concurrency(),
+                spec.concurrency() - listenerCapacity.availablePermits(), 0, 0));
     }
 
     @Override
     public synchronized void close() {
-        if (removed) return;
+        if (removed)
+            return;
         stopped.set(true);
         RedisSupport.redisRun("unsubscribe broadcast", () -> topic.removeListener(listener));
         identity.unregister(componentId);
         removed = true;
     }
 
-    private void processVolatile(
-            QueueSubscription spec,
-            QueuePolicy effectivePolicy,
-            Message message,
-            MessageHandler handler,
-            Semaphore listenerSlots,
-            AtomicBoolean stopped,
-            int failuresSoFar)
-            throws Exception {
+    private void processVolatile(QueueSubscription spec, QueuePolicy effectivePolicy, Message message,
+        MessageHandler handler, Semaphore listenerSlots, AtomicBoolean stopped, int failuresSoFar) throws Exception {
         try {
             handler.handle(message);
-            if (failuresSoFar > 0) failureRecorder.clearFirstFailure(spec, message);
+            if (failuresSoFar > 0)
+                failureRecorder.clearFirstFailure(spec, message);
         } catch (Exception error) {
             if (error instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
                 Thread.currentThread().interrupt();
                 throw error;
             }
-            metrics.get()
-                    .increment("rdt.queue.broadcast.failure", "destination", spec.destination());
+            metrics.get().increment("rdt.queue.broadcast.failure", "destination", spec.destination());
             int failed = failuresSoFar + 1;
             failureRecorder.recordFirstFailure(spec, message, effectivePolicy);
             if (!retryClassifier.isRetryable(error) || !effectivePolicy.retry().canRetry(failed)) {
-                failureRecorder.saveFailure(
-                        failureRecorder.failure(spec, message, failed, error), effectivePolicy);
+                failureRecorder.saveFailure(failureRecorder.failure(spec, message, failed, error), effectivePolicy);
                 failureRecorder.clearFirstFailure(spec, message);
                 return;
             }
             if (volatileWaiting.incrementAndGet() > policy.localBufferCapacity()) {
                 volatileWaiting.decrementAndGet();
-                failureRecorder.saveFailure(
-                        failureRecorder.failure(
-                                spec,
-                                message,
-                                failed,
-                                new RdtConfigurationException(
-                                        "Broadcast retry buffer full", error)),
-                        effectivePolicy);
+                failureRecorder.saveFailure(failureRecorder.failure(spec, message, failed,
+                    new RdtConfigurationException("Broadcast retry buffer full", error)), effectivePolicy);
                 return;
             }
             if (!budget.tryReserve()) {
@@ -216,56 +163,46 @@ final class BroadcastSubscriptionRuntime extends SubscriptionRuntime {
                 return;
             }
             try {
-                transfer.schedule(
-                    () -> {
-                        volatileWaiting.decrementAndGet();
-                        // Capture this subscription, not a registry lookup that can resolve a
-                        // replacement listener.
-                        if (closed.get() || stopped.get() || !identity.accepting()) { budget.release(1); return; }
-                        if (!identity.acceptingNewWork() || !listenerSlots.tryAcquire()) {
-                            budget.release(1);
-                            drop.accept(spec);
-                            return;
-                        }
-                        if (!budget.tryAcquireHandler()) {
-                            budget.release(1);
-                            listenerSlots.release();
-                            drop.accept(spec);
-                            return;
-                        }
-                        try {
-                            budget.submit(
-                                    () -> {
-                                        try {
-                                            if (!stopped.get())
-                                                processVolatile(
-                                                        spec,
-                                                        effectivePolicy,
-                                                        message,
-                                                        handler,
-                                                        listenerSlots,
-                                                        stopped,
-                                                        failed);
-                                        } catch (Exception failure) {
-                                            log.error(
-                                                    "Broadcast retry failed destination={}",
-                                                    spec.destination(),
-                                                    failure);
-                                        } finally {
-                                            budget.release(1);
-                                            budget.releaseHandler();
-                                            listenerSlots.release();
-                                        }
-                                    });
-                        } catch (RuntimeException submission) {
-                            budget.release(1);
-                            budget.releaseHandler();
-                            listenerSlots.release();
-                            throw submission;
-                        }
-                    },
-                    effectivePolicy.retry().delayAfter(failed).toMillis(),
-                    TimeUnit.MILLISECONDS);
+                transfer.schedule(() -> {
+                    volatileWaiting.decrementAndGet();
+                    // Capture this subscription, not a registry lookup that can resolve a
+                    // replacement listener.
+                    if (closed.get() || stopped.get() || !identity.accepting()) {
+                        budget.release(1);
+                        return;
+                    }
+                    if (!identity.acceptingNewWork() || !listenerSlots.tryAcquire()) {
+                        budget.release(1);
+                        drop.accept(spec);
+                        return;
+                    }
+                    if (!budget.tryAcquireHandler()) {
+                        budget.release(1);
+                        listenerSlots.release();
+                        drop.accept(spec);
+                        return;
+                    }
+                    try {
+                        budget.submit(() -> {
+                            try {
+                                if (!stopped.get())
+                                    processVolatile(spec, effectivePolicy, message, handler, listenerSlots, stopped,
+                                        failed);
+                            } catch (Exception failure) {
+                                log.error("Broadcast retry failed destination={}", spec.destination(), failure);
+                            } finally {
+                                budget.release(1);
+                                budget.releaseHandler();
+                                listenerSlots.release();
+                            }
+                        });
+                    } catch (RuntimeException submission) {
+                        budget.release(1);
+                        budget.releaseHandler();
+                        listenerSlots.release();
+                        throw submission;
+                    }
+                }, effectivePolicy.retry().delayAfter(failed).toMillis(), TimeUnit.MILLISECONDS);
             } catch (RuntimeException rejected) {
                 budget.release(1);
                 volatileWaiting.decrementAndGet();

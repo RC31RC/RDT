@@ -3,8 +3,9 @@ package io.github.rdt.idempotency;
 /**
  * 一次幂等执行的租约句柄。
  *
- * <p>业务成功后必须调用 {@link #complete()}；未完成的句柄关闭时会释放占位，
- * 允许后续请求在租约到期前重试。</p>
+ * <p>
+ * 业务成功后必须调用 {@link #complete()}；未完成的句柄关闭时会释放占位， 允许后续请求在租约到期前重试。
+ * </p>
  */
 public interface IdempotencyHandle extends AutoCloseable {
     /**

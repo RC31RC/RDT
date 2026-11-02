@@ -59,11 +59,9 @@ public final class RdtNamespaceManagementService {
 
     private KeySpace keys(String namespace) {
         String encodedNamespace = RdtSupport.component(namespace);
-        boolean available = configuredNamespaces.isEmpty()
-                ? client.getKeys().getKeys(KeysScanOptions.defaults()
-                        .pattern(RDT_PREFIX + encodedNamespace + ":*").chunkSize(100).limit(1))
-                        .iterator().hasNext()
-                : configuredNamespaces.contains(namespace);
+        boolean available = configuredNamespaces.isEmpty() ? client.getKeys()
+            .getKeys(KeysScanOptions.defaults().pattern(RDT_PREFIX + encodedNamespace + ":*").chunkSize(100).limit(1))
+            .iterator().hasNext() : configuredNamespaces.contains(namespace);
         RdtSupport.require(available, "Namespace is not available to this console");
         return new KeySpace(namespace);
     }
@@ -78,6 +76,6 @@ public final class RdtNamespaceManagementService {
         }
         String encodedNamespace = key.substring(RDT_PREFIX.length(), namespaceEnd);
         return RdtSupport.decodeComponent(encodedNamespace)
-                .filter(namespace -> RdtSupport.component(namespace).equals(encodedNamespace));
+            .filter(namespace -> RdtSupport.component(namespace).equals(encodedNamespace));
     }
 }

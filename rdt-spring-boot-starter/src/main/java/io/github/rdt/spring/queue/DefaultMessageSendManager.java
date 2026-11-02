@@ -28,18 +28,29 @@ public final class DefaultMessageSendManager implements RdtMessageSendManager {
     private final ObjectProvider<OutboxStore> stores;
     private final JsonCodec json;
     private final KeySpace keys;
-    public DefaultMessageSendManager(ObjectProvider<MessageQueueTemplate> transports, ObjectProvider<OutboxStore> stores,
-                                   JsonCodec json, KeySpace keys) {
-        this.transports = transports; this.stores = stores; this.json = json; this.keys = keys;
+
+    public DefaultMessageSendManager(ObjectProvider<MessageQueueTemplate> transports,
+        ObjectProvider<OutboxStore> stores, JsonCodec json, KeySpace keys) {
+        this.transports = transports;
+        this.stores = stores;
+        this.json = json;
+        this.keys = keys;
     }
-    @Override
-    public PublishReceipt send(MessageDescriptor<?> descriptor) { return publish(descriptor, PublishMode.DIRECT); }
 
     @Override
-    public PublishReceipt sendAfterCommit(MessageDescriptor<?> descriptor) { return publish(descriptor, PublishMode.AFTER_COMMIT); }
+    public PublishReceipt send(MessageDescriptor<?> descriptor) {
+        return publish(descriptor, PublishMode.DIRECT);
+    }
 
     @Override
-    public PublishReceipt sendOutbox(MessageDescriptor<?> descriptor) { return publish(descriptor, PublishMode.OUTBOX); }
+    public PublishReceipt sendAfterCommit(MessageDescriptor<?> descriptor) {
+        return publish(descriptor, PublishMode.AFTER_COMMIT);
+    }
+
+    @Override
+    public PublishReceipt sendOutbox(MessageDescriptor<?> descriptor) {
+        return publish(descriptor, PublishMode.OUTBOX);
+    }
 
     private PublishReceipt publish(MessageDescriptor<?> descriptor, PublishMode mode) {
         Objects.requireNonNull(descriptor, "message descriptor");
@@ -49,33 +60,44 @@ public final class DefaultMessageSendManager implements RdtMessageSendManager {
         Message message = descriptor.envelope(json);
         if (mode == PublishMode.OUTBOX) {
             OutboxStore store = stores.getIfAvailable();
-            if (store == null) throw configuration("OUTBOX requires rdt-consistency-jdbc-starter and rdt.consistency.enabled=true");
+            if (store == null)
+                throw configuration("OUTBOX requires rdt-consistency-jdbc-starter and rdt.consistency.enabled=true");
             if (!TransactionSynchronizationManager.isActualTransactionActive()
-                    || TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+                || TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
                 throw configuration("OUTBOX requires an active writable application transaction (@Transactional)");
             }
-            if (queueMode == QueueMode.BROADCAST) throw configuration("OUTBOX requires durable STREAM or RELIABLE_BROADCAST transport");
+            if (queueMode == QueueMode.BROADCAST)
+                throw configuration("OUTBOX requires durable STREAM or RELIABLE_BROADCAST transport");
             String id = store.append(new OutboxAppend(keys.namespace(), topic, queueMode, message));
             return new PublishReceipt(message.id(), mode, PublishReceipt.Status.OUTBOX_STORED, id);
         }
         MessageQueueTemplate transport = transports.getIfAvailable();
-        if (transport == null) throw configuration("Publishing requires rdt.queue.enabled=true and MessageQueueTemplate");
+        if (transport == null)
+            throw configuration("Publishing requires rdt.queue.enabled=true and MessageQueueTemplate");
         if (mode == PublishMode.DIRECT) {
             transport.sendMessage(topic, message, queueMode);
             return new PublishReceipt(message.id(), mode, PublishReceipt.Status.SENT, null);
         }
         if (!TransactionSynchronizationManager.isActualTransactionActive()
-                || !TransactionSynchronizationManager.isSynchronizationActive()) {
-            throw configuration("AFTER_COMMIT requires an active application transaction; use DIRECT outside transactions");
+            || !TransactionSynchronizationManager.isSynchronizationActive()) {
+            throw configuration(
+                "AFTER_COMMIT requires an active application transaction; use DIRECT outside transactions");
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                try { transport.sendMessage(topic, message, queueMode); }
-                catch (RuntimeException error) { log.error("Best-effort AFTER_COMMIT delivery failed destination={} messageId={}", topic, message.id(), error); }
+                try {
+                    transport.sendMessage(topic, message, queueMode);
+                } catch (RuntimeException error) {
+                    log.error("Best-effort AFTER_COMMIT delivery failed destination={} messageId={}", topic,
+                        message.id(), error);
+                }
             }
         });
         return new PublishReceipt(message.id(), mode, PublishReceipt.Status.AFTER_COMMIT_REGISTERED, null);
     }
-    private RdtException configuration(String message) { return new RdtConfigurationException(message); }
+
+    private RdtException configuration(String message) {
+        return new RdtConfigurationException(message);
+    }
 }

@@ -63,7 +63,8 @@ class RedisArchiveReaderIT {
                 count = reader.read(at, batch -> {
                     sizes.add(batch.size());
                     sink.write(batch);
-                    for (String value : batch) records.add(json.read(value, Map.class));
+                    for (String value : batch)
+                        records.add(json.read(value, Map.class));
                 });
                 sink.close();
             } catch (RuntimeException failure) {
@@ -79,17 +80,18 @@ class RedisArchiveReaderIT {
             });
             assertThat(records.stream().filter(record -> record.get("kind").equals("DEAD_LETTER"))).hasSize(1203);
             assertThat(records.stream().filter(record -> !record.get("kind").equals("DEAD_LETTER"))
-                    .map(record -> record.get("recordId")))
-                    .containsExactlyInAnyOrder("failed", "stalled", "current-only", "duplicate", "failed-only");
-            assertThat(records.toString()).doesNotContain("worker-secret-token", "expired-ttl", "expired-idle", "stale-history");
+                .map(record -> record.get("recordId")))
+                .containsExactlyInAnyOrder("failed", "stalled", "current-only", "duplicate", "failed-only");
+            assertThat(records.toString()).doesNotContain("worker-secret-token", "expired-ttl", "expired-idle",
+                "stale-history");
             assertThat(fingerprints(client)).isEqualTo(before);
             Path target = directory.resolve("rdt-archive-2026-10-19.jsonl.gz");
             try (var input = new GZIPInputStream(Files.newInputStream(target))) {
                 assertThat(new String(input.readAllBytes(), StandardCharsets.UTF_8).lines().count()).isEqualTo(count);
             }
             var all = new ArrayList<Map<String, Object>>();
-            new RedisArchiveReader(client, json, List.of(), Duration.ofMinutes(10))
-                    .read(at, batch -> batch.forEach(value -> all.add(json.read(value, Map.class))));
+            new RedisArchiveReader(client, json, List.of(), Duration.ofMinutes(10)).read(at,
+                batch -> batch.forEach(value -> all.add(json.read(value, Map.class))));
             assertThat(all).anySatisfy(record -> assertThat(record.get("namespace")).isEqualTo(other.namespace()));
             assertThat(all.toString()).doesNotContain("invalid-key-marker");
         } finally {
@@ -101,18 +103,21 @@ class RedisArchiveReaderIT {
     @Test
     void malformedRecordFailsTheRunWithoutPublishingOrPurgingOldFiles() throws IOException {
         RedissonClient writer = client(false);
-        writer.<String, String>getMapCache(keys.key("dead-letters", "bad"), StringCodec.INSTANCE).put("bad", "{invalid");
+        writer.<String, String>getMapCache(keys.key("dead-letters", "bad"), StringCodec.INSTANCE).put("bad",
+            "{invalid");
         writer.shutdown();
         RedissonClient client = client(true);
         try {
             Path old = Files.writeString(directory.resolve("rdt-archive-2025-01-01.jsonl.gz"), "preserve");
             var reader = new RedisArchiveReader(client, json, List.of(keys.namespace()), Duration.ofMinutes(10));
-            assertThatThrownBy(() -> reader.read(at, batch -> { })).isInstanceOf(RdtException.class)
-                    .hasMessageContaining("Cannot decode payload");
-            var factory = new RdtArchiveConfiguration().localFileArchiveSinkFactory(new RdtArchiveProperties(
-                    "local", directory, "0 0 2 * * ?", ZoneOffset.UTC, Duration.ofMinutes(10), 30));
+            assertThatThrownBy(() -> reader.read(at, batch -> {
+            })).isInstanceOf(RdtException.class).hasMessageContaining("Cannot decode payload");
+            var factory = new RdtArchiveConfiguration().localFileArchiveSinkFactory(new RdtArchiveProperties("local",
+                directory, "0 0 2 * * ?", ZoneOffset.UTC, Duration.ofMinutes(10), 30));
             new RdtArchiveJob(reader, factory, Clock.fixed(at, ZoneOffset.UTC)).archive();
-            try (var paths = Files.list(directory)) { assertThat(paths.toList()).containsExactly(old); }
+            try (var paths = Files.list(directory)) {
+                assertThat(paths.toList()).containsExactly(old);
+            }
             assertThat(client.getKeys().countExists(keys.key("dead-letters", "bad"))).isEqualTo(1);
         } finally {
             client.shutdown();
@@ -129,10 +134,10 @@ class RedisArchiveReaderIT {
         RedissonClient client = client(true);
         try {
             assertThatThrownBy(() -> client.getBucket(keys.key("forbidden", "write")).set("denied"))
-                    .hasMessageContaining("NOPERM");
+                .hasMessageContaining("NOPERM");
             var records = new ArrayList<String>();
             long count = new RedisArchiveReader(client, json, List.of(keys.namespace()), Duration.ofMinutes(10))
-                    .read(at, records::addAll);
+                .read(at, records::addAll);
             assertThat(count).isEqualTo(3);
             assertThat(records).hasSize(3);
         } finally {
@@ -148,8 +153,8 @@ class RedisArchiveReaderIT {
             cache.fastPut("m" + i, failure("m" + i), 1, TimeUnit.DAYS, 1, TimeUnit.DAYS);
         }
         for (int i = 0; i < 501; i++) {
-            client.<String, String>getMapCache(keys.key("dead-letters", "topic" + i), StringCodec.INSTANCE)
-                    .fastPut("m", failure("topic" + i), 1, TimeUnit.DAYS);
+            client.<String, String>getMapCache(keys.key("dead-letters", "topic" + i), StringCodec.INSTANCE).fastPut("m",
+                failure("topic" + i), 1, TimeUnit.DAYS);
         }
         cache.fastPut("expired-ttl", failure("expired-ttl"), 1, TimeUnit.DAYS);
         cache.fastPut("expired-idle", failure("expired-idle"), 1, TimeUnit.DAYS, 1, TimeUnit.DAYS);
@@ -169,44 +174,49 @@ class RedisArchiveReaderIT {
         state(client, "duplicate", "duplicate", "FAILED", now + 1, "authoritative");
         history(client, "recovered", "recovered", "FAILED", now, "stale-history");
         state(client, "recovered", "recovered", "SUCCEEDED", now + 1, "recovered");
-        client.<String, String>getMapCache(other.key("dead-letters", "other"), StringCodec.INSTANCE)
-                .put("other", failure("other"));
+        client.<String, String>getMapCache(other.key("dead-letters", "other"), StringCodec.INSTANCE).put("other",
+            failure("other"));
         String fake = keys.key("dead-letters", "fake").replace("{rdt-", "{invalid-");
         client.<String, String>getMap(fake, StringCodec.INSTANCE).put("bad", "invalid-key-marker");
-        client.<String, String>getMap(keys.key("queue", "unrelated"), StringCodec.INSTANCE).put("bad", "invalid-key-marker");
+        client.<String, String>getMap(keys.key("queue", "unrelated"), StringCodec.INSTANCE).put("bad",
+            "invalid-key-marker");
     }
 
     private void seedSmall(RedissonClient client) {
-        client.<String, String>getMapCache(keys.key("dead-letters", "small"), StringCodec.INSTANCE)
-                .fastPut("small", failure("small"), 1, TimeUnit.DAYS, 1, TimeUnit.DAYS);
+        client.<String, String>getMapCache(keys.key("dead-letters", "small"), StringCodec.INSTANCE).fastPut("small",
+            failure("small"), 1, TimeUnit.DAYS, 1, TimeUnit.DAYS);
         history(client, "small", "failed", "FAILED", at.toEpochMilli(), "failed");
         state(client, "small", "stuck", "DISPATCHED", at.toEpochMilli() - 600001, "stuck");
     }
 
     private String failure(String id) {
-        return json.write(FailedMessage.stream("destination", "group", Message.create(Map.of("id", id, "text", "quote\"\n"), json),
-                3, "downstream unavailable", at.toString()));
+        return json.write(FailedMessage.stream("destination", "group",
+            Message.create(Map.of("id", id, "text", "quote\"\n"), json), 3, "downstream unavailable", at.toString()));
     }
 
     private void history(RedissonClient client, String job, String id, String status, long updated, String detail) {
-        client.<String, String>getMap(keys.key("schedule-executions", job), StringCodec.INSTANCE)
-                .fastPut(id, execution(job, id, status, updated, detail));
+        client.<String, String>getMap(keys.key("schedule-executions", job), StringCodec.INSTANCE).fastPut(id,
+            execution(job, id, status, updated, detail));
         client.<String>getScoredSortedSet(keys.key("schedule-execution-expiry", job), StringCodec.INSTANCE)
-                .add(System.currentTimeMillis() + Duration.ofDays(1).toMillis(), id);
+            .add(System.currentTimeMillis() + Duration.ofDays(1).toMillis(), id);
     }
+
     private void state(RedissonClient client, String job, String id, String status, long updated, String detail) {
-        client.<String, String>getMap(keys.key("schedule-state", job), StringCodec.INSTANCE)
-                .put("execution", execution(job, id, status, updated, detail));
+        client.<String, String>getMap(keys.key("schedule-state", job), StringCodec.INSTANCE).put("execution",
+            execution(job, id, status, updated, detail));
     }
+
     private String execution(String job, String id, String status, long updated, String detail) {
-        return json.write(new JobExecution(id, job, updated, 1, status, "worker", "run", "worker-secret-token", updated, 0, detail, 0));
+        return json.write(new JobExecution(id, job, updated, 1, status, "worker", "run", "worker-secret-token", updated,
+            0, detail, 0));
     }
 
     private Map<String, String> fingerprints(RedissonClient client) {
         Map<String, String> result = new HashMap<>();
-        for (String key : client.getKeys().getKeysByPattern("*rdt:" + RdtSupport.component(keys.namespace()) + ":*", 500)) {
+        for (String key : client.getKeys().getKeysByPattern("*rdt:" + RdtSupport.component(keys.namespace()) + ":*",
+            500)) {
             String value = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_ONLY,
-                    "return redis.sha1hex(redis.call('dump', KEYS[1]) or '')", RScript.ReturnType.VALUE, List.of(key));
+                "return redis.sha1hex(redis.call('dump', KEYS[1]) or '')", RScript.ReturnType.VALUE, List.of(key));
             result.put(key, value);
         }
         return result;
@@ -215,11 +225,11 @@ class RedisArchiveReaderIT {
     private RedissonClient client(boolean readOnly) {
         Config config = new Config().setThreads(2).setNettyThreads(2);
         var server = config.useSingleServer().setAddress(System.getProperty("rdt.it.redis"))
-                .setConnectionMinimumIdleSize(1).setConnectionPoolSize(4)
-                .setSubscriptionConnectionMinimumIdleSize(1).setSubscriptionConnectionPoolSize(1);
+            .setConnectionMinimumIdleSize(1).setConnectionPoolSize(4).setSubscriptionConnectionMinimumIdleSize(1)
+            .setSubscriptionConnectionPoolSize(1);
         if (readOnly && System.getProperty("rdt.it.archive.readonly-user") != null) {
             server.setUsername(System.getProperty("rdt.it.archive.readonly-user"))
-                    .setPassword(System.getProperty("rdt.it.archive.readonly-password"));
+                .setPassword(System.getProperty("rdt.it.archive.readonly-password"));
         } else {
             server.setPassword(System.getenv("REDIS_PASSWORD"));
         }
@@ -232,6 +242,8 @@ class RedisArchiveReaderIT {
             for (KeySpace namespace : List.of(keys, other)) {
                 client.getKeys().deleteByPattern("*rdt:" + RdtSupport.component(namespace.namespace()) + ":*");
             }
-        } finally { client.shutdown(); }
+        } finally {
+            client.shutdown();
+        }
     }
 }

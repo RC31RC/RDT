@@ -5,6 +5,7 @@ package io.github.rdt.queue;
 public interface MessageHandler {
     /**
      * 处理一条消息信封。
+     *
      * @param message 待处理事件
      * @throws Exception 可参与重试的业务异常
      */

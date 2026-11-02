@@ -13,16 +13,21 @@ public @interface RdtCacheable {
 
     /**
      * 返回必填 SpEL 键。
+     *
      * @return 必填 SpEL 键
      */
     String key();
+
     /**
      * 返回ISO-8601 TTL，空字符串使用配置默认值。
+     *
      * @return ISO-8601 TTL，空字符串使用配置默认值
      */
     String ttl() default "";
+
     /**
      * 返回是否使用较短的空值缓存 TTL 保存 null 结果。
+     *
      * @return 是否使用较短的空值缓存 TTL 保存 null 结果
      */
     boolean cacheNull() default true;

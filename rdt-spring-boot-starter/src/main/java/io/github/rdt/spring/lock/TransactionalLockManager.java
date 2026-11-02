@@ -4,8 +4,11 @@ import io.github.rdt.exception.RdtErrorCode;
 import io.github.rdt.exception.RdtLockException;
 import io.github.rdt.lock.DeferredLockScope;
 import io.github.rdt.lock.DistributedLockManager;
+import io.github.rdt.lock.LockKey;
 import io.github.rdt.lock.LockOptions;
 import io.github.rdt.lock.LockScope;
+import io.github.rdt.lock.LockType;
+import java.util.Collection;
 import org.springframework.core.Ordered;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -13,9 +16,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /**
  * 为核心锁管理器补充 Spring 事务生命周期。
  *
- * <p>业务代码仍然通过 {@link DistributedLockManager#lock(String)} 添加资源锁。
- * 只有当资源锁实际被添加且当前线程存在事务时，才注册事务同步回调；
- * 没有事务时保留普通方法作用域的释放行为。</p>
+ * <p>
+ * 业务代码仍然通过 {@link DistributedLockManager#lock(LockKey)} 添加资源锁。 仅当作用域首次实际取锁时已有同线程活跃事务且底层支持延迟关闭，才注册
+ * 事务同步回调；没有事务或首次取锁先于事务时，仍由普通方法作用域释放。 跨 REQUIRES_NEW 事务须使用不同的作用域；已延迟关闭的锁仍参与顺序校验。
+ * </p>
  */
 public final class TransactionalLockManager implements DistributedLockManager {
     private final DistributedLockManager delegate;
@@ -31,7 +35,9 @@ public final class TransactionalLockManager implements DistributedLockManager {
     }
 
     @Override
-    public LockOptions defaultOptions() { return delegate.defaultOptions(); }
+    public LockOptions defaultOptions() {
+        return delegate.defaultOptions();
+    }
 
     @Override
     public LockScope beginScope() {
@@ -42,9 +48,13 @@ public final class TransactionalLockManager implements DistributedLockManager {
     }
 
     @Override
-    public void lock(String key, LockOptions options) {
-        TransactionalLockScope scope = requireCurrentScope();
-        scope.lock(key, options);
+    public void lock(LockKey key, LockOptions options) {
+        requireCurrentScope().lock(key, options);
+    }
+
+    @Override
+    public void lockAll(Collection<LockKey> keys, LockOptions options) {
+        requireCurrentScope().lockAll(keys, options);
     }
 
     @Override
@@ -65,7 +75,8 @@ public final class TransactionalLockManager implements DistributedLockManager {
         private final LockScope delegateScope;
         private final Thread owner = Thread.currentThread();
         private boolean closed;
-        private boolean transactionBound;
+        private boolean firstAcquisitionSeen;
+        private TransactionSynchronization synchronization;
 
         private TransactionalLockScope(TransactionalLockScope previous, LockScope delegateScope) {
             this.previous = previous;
@@ -73,19 +84,32 @@ public final class TransactionalLockManager implements DistributedLockManager {
         }
 
         @Override
-        public LockOptions defaultOptions() { return delegate.defaultOptions(); }
-
-        @Override
-        public void lock(String key, LockOptions options) {
-            requireCurrent();
-            delegateScope.lock(key, options);
-            bindToTransactionIfNecessary();
+        public LockOptions defaultOptions() {
+            return delegate.defaultOptions();
         }
 
         @Override
-        public boolean holds(String key) {
+        public void lock(LockKey key, LockOptions options) {
+            requireCurrent();
+            checkTransactionContext();
+            delegateScope.lock(key, options);
+            afterAcquisition();
+        }
+
+        @Override
+        public void lockAll(Collection<LockKey> keys, LockOptions options) {
+            requireCurrent();
+            checkTransactionContext();
+            delegateScope.lockAll(keys, options);
+            if (!keys.isEmpty()) {
+                afterAcquisition();
+            }
+        }
+
+        @Override
+        public boolean holds(LockKey key, LockType type) {
             requireCurrentOwner();
-            return delegateScope.holds(key);
+            return delegateScope.holds(key, type);
         }
 
         @Override
@@ -95,22 +119,47 @@ public final class TransactionalLockManager implements DistributedLockManager {
             }
             requireCurrent();
             closed = true;
-            delegateScope.close();
-            restore();
+            try {
+                delegateScope.close();
+            } finally {
+                restore();
+            }
         }
 
-        private void bindToTransactionIfNecessary() {
-            if (transactionBound
-                    || !TransactionSynchronizationManager.isActualTransactionActive()
-                    || !TransactionSynchronizationManager.isSynchronizationActive()) {
+        private void checkTransactionContext() {
+            if (synchronization != null && (!TransactionSynchronizationManager.isSynchronizationActive()
+                || !TransactionSynchronizationManager.getSynchronizations().contains(synchronization))) {
+                throw new RdtLockException(RdtErrorCode.LOCK_SCOPE,
+                    "Cannot add to a scope bound to another (suspended) transaction");
+            }
+        }
+
+        private void afterAcquisition() {
+            if (firstAcquisitionSeen) {
                 return;
             }
-            if (!(delegateScope instanceof DeferredLockScope deferredScope)) {
+            firstAcquisitionSeen = true;
+            if (!TransactionSynchronizationManager.isActualTransactionActive()
+                || !TransactionSynchronizationManager.isSynchronizationActive()
+                || !(delegateScope instanceof DeferredLockScope deferredScope)) {
                 return;
             }
-            deferredScope.deferClose();
-            transactionBound = true;
-            TransactionSynchronizationManager.registerSynchronization(new LockTransactionSynchronization(this));
+            try {
+                deferredScope.deferClose();
+                TransactionSynchronization callback = new LockTransactionSynchronization(this);
+                TransactionSynchronizationManager.registerSynchronization(callback);
+                synchronization = callback;
+            } catch (RuntimeException failure) {
+                try {
+                    delegateScope.close();
+                    deferredScope.completeClose();
+                } catch (RuntimeException cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+                closed = true;
+                restore();
+                throw failure;
+            }
         }
 
         private void completeAfterTransaction() {
@@ -122,6 +171,7 @@ public final class TransactionalLockManager implements DistributedLockManager {
                 }
             } finally {
                 closed = true;
+                synchronization = null;
                 restore();
             }
         }
@@ -129,13 +179,15 @@ public final class TransactionalLockManager implements DistributedLockManager {
         private void requireCurrent() {
             requireCurrentOwner();
             if (current.get() != this) {
-                throw new RdtLockException(RdtErrorCode.LOCK_SCOPE, "Lock scopes must be used and closed in nesting order");
+                throw new RdtLockException(RdtErrorCode.LOCK_SCOPE,
+                    "Lock scopes must be used and closed in nesting order");
             }
         }
 
         private void requireCurrentOwner() {
             if (Thread.currentThread() != owner) {
-                throw new RdtLockException(RdtErrorCode.LOCK_SCOPE, "Lock scope must only be used by its creating thread");
+                throw new RdtLockException(RdtErrorCode.LOCK_SCOPE,
+                    "Lock scope must only be used by its creating thread");
             }
         }
 

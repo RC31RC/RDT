@@ -8,9 +8,9 @@ public interface IdempotencyTemplate {
     /**
      * 尝试占用一个业务幂等键。
      *
-     * <p>占用中的执行在租约到期前不会被重复启动；成功完成后在
-     * {@code completedTtl} 内不会再次执行。进程崩溃时不需要人工解锁，
-     * 租约到期后可由后续请求接管。</p>
+     * <p>
+     * 占用中的执行在租约到期前不会被重复启动；成功完成后在 {@code completedTtl} 内不会再次执行。进程崩溃时不需要人工解锁， 租约到期后可由后续请求接管。
+     * </p>
      *
      * @param key 业务幂等键
      * @param leaseTime 执行租约，必须大于零

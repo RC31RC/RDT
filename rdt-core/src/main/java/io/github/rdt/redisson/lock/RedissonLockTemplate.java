@@ -24,12 +24,19 @@ public final class RedissonLockTemplate implements DistributedLockTemplate {
     private final RedissonClient client;
     private final KeySpace keys;
     private LockOptions defaults = LockOptions.defaults();
-    public void defaultOptions(LockOptions options) { defaults = Objects.requireNonNull(options); }
+
+    public void defaultOptions(LockOptions options) {
+        defaults = Objects.requireNonNull(options);
+    }
+
     @Override
-    public LockOptions defaultOptions() { return defaults; }
+    public LockOptions defaultOptions() {
+        return defaults;
+    }
 
     /**
      * 创建锁模板。
+     *
      * @param client 共享 Redisson 客户端
      * @param keys 应用命名空间
      */
@@ -40,8 +47,8 @@ public final class RedissonLockTemplate implements DistributedLockTemplate {
 
     @Override
     public Optional<LockHandle> tryLock(String key, LockOptions options) {
-        String name = keys.key(options.type() == LockType.READ || options.type() == LockType.WRITE ? "rwlock" :
-                options.type() == LockType.FAIR ? "fairlock" : "lock", key);
+        String name = keys.key(options.type() == LockType.READ || options.type() == LockType.WRITE ? "rwlock"
+            : options.type() == LockType.FAIR ? "fairlock" : "lock", key);
         RLock lock = switch (options.type()) {
             case REENTRANT -> client.getLock(name);
             case FAIR -> client.getFairLock(name);
@@ -50,8 +57,8 @@ public final class RedissonLockTemplate implements DistributedLockTemplate {
         };
         try {
             boolean acquired = options.leaseTime().isZero()
-                    ? lock.tryLock(options.waitTime().toMillis(), TimeUnit.MILLISECONDS)
-                    : lock.tryLock(options.waitTime().toMillis(), options.leaseTime().toMillis(), TimeUnit.MILLISECONDS);
+                ? lock.tryLock(options.waitTime().toMillis(), TimeUnit.MILLISECONDS)
+                : lock.tryLock(options.waitTime().toMillis(), options.leaseTime().toMillis(), TimeUnit.MILLISECONDS);
             return acquired ? Optional.of(new OwnedLock(lock, Thread.currentThread().threadId())) : Optional.empty();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -63,8 +70,8 @@ public final class RedissonLockTemplate implements DistributedLockTemplate {
 
     @Override
     public <T> T execute(String key, LockOptions options, Callable<T> action) throws Exception {
-        try (LockHandle ignored = tryLock(key, options).orElseThrow(
-                () -> new RdtLockException(RdtErrorCode.LOCK_TIMEOUT, "Lock deadline exceeded"))) {
+        try (LockHandle ignored = tryLock(key, options)
+            .orElseThrow(() -> new RdtLockException(RdtErrorCode.LOCK_TIMEOUT, "Lock deadline exceeded"))) {
             return action.call();
         }
     }
@@ -75,8 +82,7 @@ public final class RedissonLockTemplate implements DistributedLockTemplate {
         RSemaphore semaphore = client.getSemaphore(keys.key("semaphore", key));
         RedisSupport.redisRun("initialize semaphore", () -> semaphore.trySetPermits(permits));
         try {
-            return semaphore.tryAcquire(wait)
-                    ? Optional.of(new SemaphoreHandle(semaphore)) : Optional.empty();
+            return semaphore.tryAcquire(wait) ? Optional.of(new SemaphoreHandle(semaphore)) : Optional.empty();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RdtLockException(RdtErrorCode.INTERRUPTED, "Semaphore acquisition interrupted", e);
@@ -98,7 +104,7 @@ public final class RedissonLockTemplate implements DistributedLockTemplate {
         @Override
         public boolean isHeld() {
             return !closed && Thread.currentThread().threadId() == owner
-                    && RedisSupport.redis("check lock ownership", lock::isHeldByCurrentThread);
+                && RedisSupport.redis("check lock ownership", lock::isHeldByCurrentThread);
         }
 
         @Override
@@ -107,7 +113,8 @@ public final class RedissonLockTemplate implements DistributedLockTemplate {
                 return;
             }
             if (Thread.currentThread().threadId() != owner) {
-                throw new RdtLockException(RdtErrorCode.LOCK_OWNERSHIP, "Lock must be released by its acquiring thread");
+                throw new RdtLockException(RdtErrorCode.LOCK_OWNERSHIP,
+                    "Lock must be released by its acquiring thread");
             }
             try {
                 lock.unlock();

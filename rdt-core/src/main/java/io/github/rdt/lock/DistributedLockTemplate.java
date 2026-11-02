@@ -8,18 +8,24 @@ import java.util.concurrent.Callable;
 public interface DistributedLockTemplate {
     /**
      * 尝试获取锁，保留线程中断状态。
+     *
      * @param key 逻辑资源键
      * @param options 锁获取策略
      * @return 已获取的锁句柄，超时返回空值
      */
     Optional<LockHandle> tryLock(String key, LockOptions options);
 
-    default LockOptions defaultOptions() { return LockOptions.defaults(); }
+    default LockOptions defaultOptions() {
+        return LockOptions.defaults();
+    }
 
-    default Optional<LockHandle> tryLock(String key) { return tryLock(key, defaultOptions()); }
+    default Optional<LockHandle> tryLock(String key) {
+        return tryLock(key, defaultOptions());
+    }
 
     /**
      * 释放已获取的句柄。
+     *
      * @param handle 由当前线程获取的锁句柄
      */
     default void unlock(LockHandle handle) {
@@ -28,6 +34,7 @@ public interface DistributedLockTemplate {
 
     /**
      * 执行同步回调，并在异常情况下保证释放。
+     *
      * @param key 逻辑键
      * @param options 锁获取策略
      * @param action 业务回调，其受检异常保持原样传播
@@ -39,6 +46,7 @@ public interface DistributedLockTemplate {
 
     /**
      * 获取一个 RSemaphore 许可；该基础信号量不具备崩溃自动回收能力。
+     *
      * @param key 逻辑信号量名称
      * @param permits 初始容量，后续调用方必须使用相同容量
      * @param wait 最长等待时间

@@ -18,13 +18,15 @@ import org.springframework.context.annotation.Configuration;
 
 /** 只装配控制台所需的 Redis 管理组件，不创建业务侧 RDT 模板。 */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({RdtConsoleProperties.class, RdtAlertProperties.class, ConsoleConnectionProperties.class})
+@EnableConfigurationProperties({RdtConsoleProperties.class, RdtAlertProperties.class,
+    ConsoleConnectionProperties.class})
 public class RdtConsoleConfiguration {
     @Bean
     public ApplicationRunner verifyConsoleFrontend() {
         return args -> {
             if (!new ClassPathResource("static/index.html").exists()) {
-                throw new RdtConfigurationException("Console frontend is missing; run sh mvnw -pl rdt-console -am package before starting the application");
+                throw new RdtConfigurationException(
+                    "Console frontend is missing; run sh mvnw -pl rdt-console -am package before starting the application");
             }
         };
     }
@@ -45,7 +47,8 @@ public class RdtConsoleConfiguration {
     }
 
     @Bean
-    public RdtConsoleAuthenticationFilter rdtConsoleAuthenticationFilter(RdtConsoleProperties properties, ConsoleSecurityService security) {
+    public RdtConsoleAuthenticationFilter rdtConsoleAuthenticationFilter(RdtConsoleProperties properties,
+        ConsoleSecurityService security) {
         return new RdtConsoleAuthenticationFilter(properties, security);
     }
 
@@ -60,7 +63,8 @@ public class RdtConsoleConfiguration {
     }
 
     @Bean(destroyMethod = "close")
-    public ConsoleConnectionManager consoleConnectionManager(ConsoleConnectionStore store, ConsoleRedisClientFactory factory) {
+    public ConsoleConnectionManager consoleConnectionManager(ConsoleConnectionStore store,
+        ConsoleRedisClientFactory factory) {
         return new ConsoleConnectionManager(store, factory);
     }
 }

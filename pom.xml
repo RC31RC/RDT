@@ -66,6 +66,25 @@
                 <artifactId>maven-javadoc-plugin</artifactId>
                 <configuration><doclint>all</doclint><failOnWarnings>true</failOnWarnings></configuration>
             </plugin>
+            <plugin>
+                <groupId>net.revelc.code.formatter</groupId>
+                <artifactId>formatter-maven-plugin</artifactId>
+                <version>2.29.0</version> <!-- 请使用最新版本 -->
+                <dependencies>
+                    <dependency>
+                        <groupId>cn.yusiwen</groupId>
+                        <artifactId>maven-build-helper</artifactId>
+                        <version>1.5.4</version> <!-- 请检查最新版本 -->
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <!-- 使用4空格缩进的P3C规约，也可换成 p3c-formatter-2spaces.xml -->
+                    <configFile>p3c-formatter-4spaces.xml</configFile>
+                    <compilerSource>${java.version}</compilerSource>
+                    <compilerCompliance>${java.version}</compilerCompliance>
+                    <compilerTargetPlatform>${java.version}</compilerTargetPlatform>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

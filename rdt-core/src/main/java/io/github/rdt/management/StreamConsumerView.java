@@ -8,4 +8,5 @@ package io.github.rdt.management;
  * @param idleTimeMillis 空闲时间
  * @param inactiveMillis 最近交互空闲时间
  */
-public record StreamConsumerView(String name, long pending, long idleTimeMillis, long inactiveMillis) { }
+public record StreamConsumerView(String name, long pending, long idleTimeMillis, long inactiveMillis) {
+}

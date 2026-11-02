@@ -6,6 +6,7 @@ import java.time.Duration;
 public interface MessageQueueTemplate {
     /**
      * 发送持久化 Stream 消息信封。
+     *
      * @param destination 逻辑 Stream 名称
      * @param payload 业务数据
      * @return 不可变消息 ID
@@ -16,6 +17,7 @@ public interface MessageQueueTemplate {
 
     /**
      * 通过所选传输模式立即发送。
+     *
      * @param destination 逻辑资源名
      * @param payload 业务数据
      * @param mode 消息传输模式
@@ -25,6 +27,7 @@ public interface MessageQueueTemplate {
 
     /**
      * 通过持久化到期索引原子转移到 Stream。
+     *
      * @param destination 逻辑延迟队列名称
      * @param payload 业务数据
      * @param delay 大于零的延迟时长
@@ -46,9 +49,9 @@ public interface MessageQueueTemplate {
         return sendOrdered(topic, orderingKey, payload, 16);
     }
 
-
     /**
      * 仅向当前在线订阅的实例发布消息。
+     *
      * @param destination 逻辑主题名称
      * @param payload 业务数据
      * @return 不可变消息 ID
@@ -66,6 +69,7 @@ public interface MessageQueueTemplate {
 
     /**
      * 启动带本地并发上限的消费者；处理使用虚拟线程，不共享固定业务线程池。
+     *
      * @param subscription 消息传输配置
      * @param handler 同步且幂等的消息处理器
      * @return 本地管理的生命周期句柄
@@ -74,7 +78,9 @@ public interface MessageQueueTemplate {
 
     /** Register a consumer without manually assembling the subscription record. */
     default Subscription subscribe(String destination, QueueMode mode, String group, int concurrency,
-                                   QueueOptions options, MessageHandler handler) {
-        return subscribe(new QueueSubscription(destination, mode, group, concurrency, "", options, 0, destination + ":" + group), handler);
+        QueueOptions options, MessageHandler handler) {
+        return subscribe(
+            new QueueSubscription(destination, mode, group, concurrency, "", options, 0, destination + ":" + group),
+            handler);
     }
 }

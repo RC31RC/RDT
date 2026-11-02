@@ -61,24 +61,17 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
 
     private final AtomicInteger volatileWaiting = new AtomicInteger();
     private final AtomicLong broadcastDrops = new AtomicLong();
-    private final ScheduledExecutorService transfer =
-            Executors.newSingleThreadScheduledExecutor(
-                    Thread.ofPlatform().daemon().name("rdt-queue-maintenance").factory());
+    private final ScheduledExecutorService transfer = Executors
+        .newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("rdt-queue-maintenance").factory());
     private final AtomicBoolean closed = new AtomicBoolean();
     private final List<Subscription> subscriptions = new CopyOnWriteArrayList<>();
     private final ExecutionBudget budget;
     private final QueueStreams streams;
     private final QueueProducer producer;
 
-    public RedissonMessageQueueTemplate(
-            RedissonClient client,
-            KeySpace keys,
-            JsonCodec json,
-            QueuePolicy policy,
-            DistributedLockTemplate locks,
-            FailedMessageStore failures,
-            RuntimeIdentity identity,
-            RetryClassifier retryClassifier) {
+    public RedissonMessageQueueTemplate(RedissonClient client, KeySpace keys, JsonCodec json, QueuePolicy policy,
+        DistributedLockTemplate locks, FailedMessageStore failures, RuntimeIdentity identity,
+        RetryClassifier retryClassifier) {
         this.client = client;
         this.keys = keys;
         this.json = json;
@@ -91,32 +84,20 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
         retention = new StreamRetention(policy, client, keys);
         retryIndex = new StreamRetryIndex(client, keys);
         failureRecorder = new MessageFailureRecorder(client, keys, failures, instanceId);
-        lifecycle =
-                new StreamMessageLifecycle(
-                        client,
-                        keys,
-                        json,
-                        locks,
-                        identity,
-                        retryIndex,
-                        retention,
-                        failureRecorder,
-                        retryClassifier);
+        lifecycle = new StreamMessageLifecycle(client, keys, json, locks, identity, retryIndex, retention,
+            failureRecorder, retryClassifier);
         budget = new ExecutionBudget(policy);
         streams = new QueueStreams(client, keys);
         producer = new QueueProducer(client, keys, json, identity, retention, streams, closed, policy);
-        transfer.scheduleWithFixedDelay(
-                () -> {
-                    try {
-                        producer.transferDelayed();
-                        retention.sweepAcknowledged();
-                    } catch (RuntimeException error) {
-                        if (!closed.get()) log.warn("Queue maintenance failed", error);
-                    }
-                },
-                100,
-                100,
-                TimeUnit.MILLISECONDS);
+        transfer.scheduleWithFixedDelay(() -> {
+            try {
+                producer.transferDelayed();
+                retention.sweepAcknowledged();
+            } catch (RuntimeException error) {
+                if (!closed.get())
+                    log.warn("Queue maintenance failed", error);
+            }
+        }, 100, 100, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -141,116 +122,57 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
 
     @Override
     public Subscription subscribe(QueueSubscription spec, MessageHandler handler) {
-        RdtSupport.require(
-                !closed.get() && handler != null, "Transport is closed or handler is missing");
+        RdtSupport.require(!closed.get() && handler != null, "Transport is closed or handler is missing");
         // 编程式订阅与注解注册一样，在启动工作线程前完成策略校验。
         policy.resolve(spec.options());
-        RdtSupport.require(
-                spec.mode() != QueueMode.RELIABLE_BROADCAST || identity.hasStableInstanceId(),
-                "Reliable broadcast requires an explicitly configured stable instance ID");
+        RdtSupport.require(spec.mode() != QueueMode.RELIABLE_BROADCAST || identity.hasStableInstanceId(),
+            "Reliable broadcast requires an explicitly configured stable instance ID");
         // 共享目的地名称供独立管理端读取；不是实例注册或心跳，也不随订阅关闭删除。
         if (!spec.displayName().isBlank()) {
-            RedisSupport.redisRun(
-                    "save queue display name",
-                    () ->
-                            client.<String, String>getMap(
-                                            keys.key("queue-metadata", spec.destination()),
-                                            StringCodec.INSTANCE)
-                                    .fastPut("displayName", spec.displayName()));
+            RedisSupport.redisRun("save queue display name",
+                () -> client
+                    .<String, String>getMap(keys.key("queue-metadata", spec.destination()), StringCodec.INSTANCE)
+                    .fastPut("displayName", spec.displayName()));
         }
         if (spec.mode() == QueueMode.BROADCAST) {
-            return track(
-                    new BroadcastSubscriptionRuntime(
-                            spec,
-                            handler,
-                            client,
-                            keys,
-                            json,
-                            identity,
-                            policy,
-                            budget,
-                            transfer,
-                            failureRecorder,
-                            retryClassifier,
-                            closed,
-                            volatileWaiting,
-                            this::recordBroadcastDrop,
-                            () -> metrics));
+            return track(new BroadcastSubscriptionRuntime(spec, handler, client, keys, json, identity, policy, budget,
+                transfer, failureRecorder, retryClassifier, closed, volatileWaiting, this::recordBroadcastDrop,
+                () -> metrics));
         }
-        final QueueSubscription effective =
-                spec.mode() == QueueMode.RELIABLE_BROADCAST
-                        ? new QueueSubscription(
-                                spec.destination(),
-                                QueueMode.RELIABLE_BROADCAST,
-                                spec.effectiveGroup(instanceId),
-                                spec.concurrency(),
-                                spec.displayName(),
-                                spec.options(),
-                                spec.orderedPartitions(),
-                                spec.listenerId())
-                        : spec;
+        final QueueSubscription effective = spec.mode() == QueueMode.RELIABLE_BROADCAST
+            ? new QueueSubscription(spec.destination(), QueueMode.RELIABLE_BROADCAST, spec.effectiveGroup(instanceId),
+                spec.concurrency(), spec.displayName(), spec.options(), spec.orderedPartitions(), spec.listenerId())
+            : spec;
         if (effective.orderedPartitions() > 0) {
             streams.registerPartitions(effective.destination(), effective.orderedPartitions());
             for (int partition = 0; partition < effective.orderedPartitions(); partition++) {
                 String destination = streams.partitionTopic(effective.destination(), partition);
-                streams.createGroup(
-                        new QueueSubscription(
-                                destination,
-                                QueueMode.STREAM,
-                                effective.group(),
-                                1,
-                                effective.displayName(),
-                                effective.options(),
-                                0,
-                                effective.listenerId() + ":" + partition));
+                streams.createGroup(new QueueSubscription(destination, QueueMode.STREAM, effective.group(), 1,
+                    effective.displayName(), effective.options(), 0, effective.listenerId() + ":" + partition));
                 retention.trimStream(streams.stream(destination), destination);
             }
         } else if (effective.mode() != QueueMode.BROADCAST) {
             streams.createGroup(effective);
             retention.trimStream(streams.stream(effective.destination()), effective.destination());
         }
-        SubscriptionRuntime runtime =
-                effective.orderedPartitions() > 0
-                        ? new OrderedPartitionSubscriptionRuntime(
-                                effective, handler, identity, policy, locks, streams, budget,
-                                lifecycle)
-                        : new StreamBatchSubscriptionRuntime(
-                                effective,
-                                handler,
-                                identity,
-                                policy,
-                                retryIndex,
-                                lifecycle,
-                                streams,
-                                budget,
-                                new PendingRecoveryCoordinator(
-                                        client, keys, locks, effective, identity, policy),
-                                () -> metrics);
+        SubscriptionRuntime runtime = effective.orderedPartitions() > 0
+            ? new OrderedPartitionSubscriptionRuntime(effective, handler, identity, policy, locks, streams, budget,
+                lifecycle)
+            : new StreamBatchSubscriptionRuntime(effective, handler, identity, policy, retryIndex, lifecycle, streams,
+                budget, new PendingRecoveryCoordinator(client, keys, locks, effective, identity, policy),
+                () -> metrics);
         String componentId = "listener:" + spec.listenerId();
-        identity.register(
-                componentId,
-                () ->
-                        new RuntimeComponent(
-                                "listener",
-                                spec.listenerId(),
-                                spec.destination(),
-                                effective.group(),
-                                spec.mode()
-                                        + ":"
-                                        + (effective.orderedPartitions() == 0
-                                                ? "CONCURRENT"
-                                                : "ORDERED:" + effective.orderedPartitions())
-                                        + ":"
-                                        + policy.resolve(spec.options()),
-                                spec.concurrency(),
-                                lifecycle.active(spec.listenerId()),
-                                budget.bufferedMessages(),
-                                policy.localBufferCapacity()));
-        Subscription subscription =
-                () -> {
-                    identity.unregister(componentId);
-                    runtime.close();
-                };
+        identity.register(componentId,
+            () -> new RuntimeComponent("listener", spec.listenerId(), spec.destination(), effective.group(),
+                spec.mode() + ":"
+                    + (effective.orderedPartitions() == 0 ? "CONCURRENT" : "ORDERED:" + effective.orderedPartitions())
+                    + ":" + policy.resolve(spec.options()),
+                spec.concurrency(), lifecycle.active(spec.listenerId()), budget.bufferedMessages(),
+                policy.localBufferCapacity()));
+        Subscription subscription = () -> {
+            identity.unregister(componentId);
+            runtime.close();
+        };
         return track(subscription);
     }
 
@@ -278,22 +200,23 @@ public final class RedissonMessageQueueTemplate implements MessageQueueTemplate,
         metrics.increment("rdt.queue.broadcast.dropped", "destination", spec.destination());
         long dropped = broadcastDrops.incrementAndGet();
         if ((dropped & (dropped - 1)) == 0) {
-            log.warn(
-                    "Online broadcast capacity exceeded destination={} totalDropped={}",
-                    spec.destination(),
-                    dropped);
+            log.warn("Online broadcast capacity exceeded destination={} totalDropped={}", spec.destination(), dropped);
         }
     }
 
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) return;
+        if (!closed.compareAndSet(false, true))
+            return;
         transfer.shutdownNow();
         try {
             subscriptions.forEach(Subscription::close);
         } finally {
-            try { producer.close(); }
-            finally { budget.close(); }
+            try {
+                producer.close();
+            } finally {
+                budget.close();
+            }
         }
     }
 }

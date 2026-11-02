@@ -10,9 +10,7 @@ public interface RetryClassifier {
 
     /** Unknown, configuration and permanent failures are not retried automatically. */
     static RetryClassifier infrastructureFailures() {
-        return failure -> failure instanceof RdtException rdt
-                && (rdt.code() == RdtErrorCode.REDIS_OPERATION
-                    || rdt.code() == RdtErrorCode.REDIS_TIMEOUT
-                    || rdt.code() == RdtErrorCode.RATE_LIMITED);
+        return failure -> failure instanceof RdtException rdt && (rdt.code() == RdtErrorCode.REDIS_OPERATION
+            || rdt.code() == RdtErrorCode.REDIS_TIMEOUT || rdt.code() == RdtErrorCode.RATE_LIMITED);
     }
 }

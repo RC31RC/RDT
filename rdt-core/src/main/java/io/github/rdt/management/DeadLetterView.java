@@ -15,10 +15,9 @@ import io.github.rdt.queue.QueueMode;
  * @param failedAt 失败时间
  * @param displayName 原始目的地的展示名
  */
-public record DeadLetterView(String destination, String group, String messageId,
-                             String payload, String createdAt, long attempts,
-                             String error, String failedAt, String displayName, QueueMode mode,
-                             String instanceId, String originalMessageId, String firstFailedAt) {
+public record DeadLetterView(String destination, String group, String messageId, String payload, String createdAt,
+    long attempts, String error, String failedAt, String displayName, QueueMode mode, String instanceId,
+    String originalMessageId, String firstFailedAt) {
     /** 未指定展示名时显示目的地。 */
     public DeadLetterView {
         displayName = displayName == null || displayName.isBlank() ? destination : displayName;

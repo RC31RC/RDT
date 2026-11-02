@@ -538,22 +538,57 @@ try (LockHandle ignored = locks.tryLock("order:" + orderId,
 - `leaseTime=0` 启用 watchdog，正值是固定租约且不自动续期；正值配置启动时打印 WARN。
 - 支持 REENTRANT、FAIR、READ、WRITE；公平策略可能降低吞吐，不默认切换。
 
-### 7.2 方法作用域内按需加锁
+### 7.2 业务锁键与作用域
+
+`LockKey` 表示**互斥范围**，不要求对应数据库记录。类名取 `getSimpleName()`，不会附加
+`.class`；共享 namespace 的使用模块负责避免简单类名重名，并保证各节点对 ID 的字符串编码一致。
 
 ```java
+LockKey record = LockKey.forResource(Order.class, orderId);           // Order:123
+LockKey claim = LockKey.forOperation(TaskCoordination.class, "claim", requestId);
+LockKey singleton = LockKey.named(TaskCoordination.class, "global-refresh");
+
 @RdtLock
 public void updateOrder(long id) {
-    lockManager.lock("order:" + id);
+    lockManager.lock(LockKey.forResource(Order.class, id));
     repository.update(id);
+}
+
+try (LockScope scope = lockManager.beginScope()) {
+    lockManager.lockAll(List.of(firstKey, secondKey));
+    // synchronous business work
 }
 ```
 
-- 注解只建立作用域，不读取业务锁 key；锁资源在方法内部显式添加。
-- 不需要注解时可 `try (LockScope scope = lockManager.beginScope()) { scope.lock(key); ... }`。
-- 经 Spring 代理的 public、非 final 方法才触发切面；self-invocation 不生效。
-- 当前事务适配器在实际加锁时发现已存在事务，会将已取得锁的释放延迟到该事务完成；不应把它理解成任意外层事务图上的锁累积管理器。
-- 无事务时同步方法退出释放；异步线程不继承作用域。不要用 ThreadLocal 传播业务身份、锁或事务。
-- 锁不能替代数据库唯一约束、事务、消息幂等和外部 fencing。
+- `@RdtLock` **只建立作用域**，不自动锁资源；调用方须使用 `manager.lock(key)`。
+  显式 `beginScope()` 同样适用；`scope.lock(key)` 与 manager 在当前 scope 中加锁等价。
+  未经过 Spring 代理的同类自调用不会触发注解切面。
+- 同一作用域按实际锁身份去重，不增加重入层级；嵌套 scope 可对相同锁重入，
+  并仅释放自己的重入层级。实际身份包括模板的 namespace、Redisson key-space 和逻辑键：
+  `REENTRANT` 使用 `lock`，`FAIR` 使用 `fairlock`，`READ/WRITE` 共用 `rwlock`。
+  因此相同文本的公平锁与普通锁互不排斥；同 scope 的 READ/WRITE 切换会拒绝。
+  不同工厂若序列化出同一逻辑键，表示同一个互斥范围，不按用途人为拆分。
+- `lockAll` 在获取前去重、同类型按规范化 ID 字典序排序；配置跨类型顺序后，
+  先按配置类型、再按 ID 排序。逐把追加同类型更小的 ID 会拒绝；
+  中途失败逆序清理本 scope 已取得的锁（清理失败附到原异常）。
+  如果释放结果不明，manager 会阻止该线程再次加锁，避免假定锁已释放。
+- 多类型模块可在启动配置一个固定的 `LockOrder` Bean，例如
+  `new LockOrder(List.of(Order.class, Payment.class))`。Spring starter 自动使用它；
+  配置重复简单类名或获取未列出的类型会报错。`signature()` 提供稳定的类型链
+  供部署对比；多实例必须使用相同配置。若类型顺序来自数据库，使用方须在启动期
+  加载、校验、冻结并核对各实例版本/签名，**不可**在每次取锁时查库。
+- 不配置 `LockOrder` 时，跨类型的批量请求保持首次出现的类型组顺序，
+  不拒绝不同类型的逆序追加；**不保证避免跨类型死锁**。同类型仍需按 ID 升序。
+  没有自定义 ID 排序器，需数值排序时由调用方编码为可字典序比较的稳定 ID。
+- Spring 默认装配 `TransactionalLockManager`：仅当 scope **首次实际取锁时**
+  同线程已有活跃事务且底层支持延迟关闭，才在该事务 `afterCompletion` 物理释放；
+  外层事务会覆盖被调用方法返回之后的持锁期，提交和回滚均释放。
+  首次加锁先于事务或无事务时，按 scope/method 关闭释放，不追溯绑定后续事务。
+  `REQUIRES_NEW` 的内层 scope 绑定内层事务，外层持锁仍随外层事务释放；
+  嵌套 scope 和已关闭但待事务完成的锁仍参与锁序校验。跨不同事务复用同一个
+  已绑定的开放 scope 追加锁会报错，需建立新的 scope。
+- 上述生命周期仅限同线程同步调用。异步线程须重新建立 scope；Redis 锁不能替代
+  数据库唯一约束、事务、幂等键或 fencing。
 
 ### 7.3 信号量
 

@@ -28,25 +28,62 @@ public final class RuntimeIdentity {
         RdtSupport.component(instanceId);
     }
 
-    public void register(String key, Supplier<RuntimeComponent> component) { components.put(key, component); }
-    public void unregister(String key) { components.remove(key); }
-    public List<RuntimeComponent> components() {
-        return components.values().stream().map(Supplier::get)
-                .sorted(Comparator.comparing(RuntimeComponent::kind).thenComparing(RuntimeComponent::id))
-                .toList();
+    public void register(String key, Supplier<RuntimeComponent> component) {
+        components.put(key, component);
     }
 
-    public String instanceId() { return instanceId; }
-    public boolean hasStableInstanceId() { return stableInstanceId; }
-    public String runId() { return runId; }
-    public String leaseToken() { return leaseToken; }
-    public long generation() { return generation; }
-    public boolean draining() { return draining; }
-    public void draining(boolean value) { draining = value; }
-    public boolean accepting() { return !draining && ownership.getAsBoolean(); }
-    public void admission(Supplier<PressureSnapshot> value) { admission = Objects.requireNonNull(value); }
-    public PressureSnapshot pressure() { return admission.get(); }
-    public boolean acceptingNewWork() { return accepting() && !pressure().paused(); }
+    public void unregister(String key) {
+        components.remove(key);
+    }
+
+    public List<RuntimeComponent> components() {
+        return components.values().stream().map(Supplier::get)
+            .sorted(Comparator.comparing(RuntimeComponent::kind).thenComparing(RuntimeComponent::id)).toList();
+    }
+
+    public String instanceId() {
+        return instanceId;
+    }
+
+    public boolean hasStableInstanceId() {
+        return stableInstanceId;
+    }
+
+    public String runId() {
+        return runId;
+    }
+
+    public String leaseToken() {
+        return leaseToken;
+    }
+
+    public long generation() {
+        return generation;
+    }
+
+    public boolean draining() {
+        return draining;
+    }
+
+    public void draining(boolean value) {
+        draining = value;
+    }
+
+    public boolean accepting() {
+        return !draining && ownership.getAsBoolean();
+    }
+
+    public void admission(Supplier<PressureSnapshot> value) {
+        admission = Objects.requireNonNull(value);
+    }
+
+    public PressureSnapshot pressure() {
+        return admission.get();
+    }
+
+    public boolean acceptingNewWork() {
+        return accepting() && !pressure().paused();
+    }
 
     public BooleanSupplier guard() {
         BooleanSupplier captured = ownership;
@@ -55,7 +92,7 @@ public final class RuntimeIdentity {
 
     public void acquired(String token, long version, BooleanSupplier owner) {
         RdtSupport.require(token != null && !token.isBlank() && version > 0 && owner != null,
-                "An acquired runtime requires its lease token, generation and ownership guard");
+            "An acquired runtime requires its lease token, generation and ownership guard");
         leaseToken = token;
         generation = version;
         ownership = owner;

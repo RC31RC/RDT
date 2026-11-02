@@ -5,6 +5,7 @@ import java.time.Duration;
 
 /**
  * 锁获取策略。
+ *
  * @param type 锁类型
  * @param waitTime 最长等待时间，零表示立即尝试
  * @param leaseTime 零表示启用看门狗；正值表示固定租约且禁用自动续期
@@ -19,6 +20,7 @@ public record LockOptions(LockType type, Duration waitTime, Duration leaseTime) 
 
     /**
      * 返回最多等待三秒、通过看门狗续期的非公平锁配置。
+     *
      * @return 最多等待三秒、通过看门狗续期的非公平锁配置
      */
     public static LockOptions defaults() {

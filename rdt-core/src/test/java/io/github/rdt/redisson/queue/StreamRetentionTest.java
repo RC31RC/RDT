@@ -25,7 +25,8 @@ class StreamRetentionTest {
         when(stream.getName()).thenReturn("events");
         var retention = new StreamRetention(policy, client, new KeySpace("retention-test"));
 
-        for (int i = 0; i < 1000; i++) retention.markAcknowledged(policy, stream);
+        for (int i = 0; i < 1000; i++)
+            retention.markAcknowledged(policy, stream);
 
         verifyNoInteractions(client);
         verify(stream, times(1000)).getName();

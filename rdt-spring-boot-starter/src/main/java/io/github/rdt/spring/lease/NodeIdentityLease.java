@@ -35,9 +35,9 @@ public class NodeIdentityLease implements SmartInitializingSingleton, AutoClosea
     private volatile boolean closed;
     private boolean waiting;
 
-    public NodeIdentityLease(RedisOwnerLeaseService leases, RdtProperties rdt,
-            RdtInstanceProperties properties, ObjectProvider<RdtAnnotationRegistrar> registrar,
-            Supplier<List<NodeIdentityListener>> listeners, RuntimeIdentity runtime) {
+    public NodeIdentityLease(RedisOwnerLeaseService leases, RdtProperties rdt, RdtInstanceProperties properties,
+        ObjectProvider<RdtAnnotationRegistrar> registrar, Supplier<List<NodeIdentityListener>> listeners,
+        RuntimeIdentity runtime) {
         this.leases = leases;
         this.rdt = rdt;
         this.properties = properties;
@@ -59,22 +59,26 @@ public class NodeIdentityLease implements SmartInitializingSingleton, AutoClosea
     @Override
     public synchronized void afterSingletonsInstantiated() {
         lease = leases.acquire(name(), instanceId(), properties.lease())
-                .orElseThrow(() -> new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "rdt.instance-id is already running: " + rdt.instanceId()));
+            .orElseThrow(() -> new RdtRedisException(RdtErrorCode.REDIS_OPERATION,
+                "rdt.instance-id is already running: " + rdt.instanceId()));
         healthy = true;
         publishOwnership();
         registrar.ifAvailable(value -> value.setExecutionGuard(this::guard));
-        renewal = Executors.newSingleThreadScheduledExecutor(
-                Thread.ofPlatform().daemon().name("rdt-identity-renewal").factory());
+        renewal = Executors
+            .newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("rdt-identity-renewal").factory());
         // Spring logs failures at this scheduling boundary and keeps the next recovery attempt alive.
         renewal.scheduleWithFixedDelay(TaskUtils.decorateTaskWithErrorHandler(this::renew, null, true),
-                properties.renewInterval().toMillis(), properties.renewInterval().toMillis(), TimeUnit.MILLISECONDS);
+            properties.renewInterval().toMillis(), properties.renewInterval().toMillis(), TimeUnit.MILLISECONDS);
     }
 
     public synchronized void renew() {
-        if (closed) return;
+        if (closed)
+            return;
         try {
-            if (healthy && leases.renew(lease, properties.lease())) return;
-            if (healthy) log.warn("Node identity lost; revoking resources before recovery: {}", rdt.instanceId());
+            if (healthy && leases.renew(lease, properties.lease()))
+                return;
+            if (healthy)
+                log.warn("Node identity lost; revoking resources before recovery: {}", rdt.instanceId());
             healthy = false;
             suspend();
             if (lease != null) {
@@ -83,7 +87,8 @@ public class NodeIdentityLease implements SmartInitializingSingleton, AutoClosea
             }
             var acquired = leases.acquire(name(), instanceId(), properties.lease());
             if (acquired.isEmpty()) {
-                if (!waiting) log.warn("Node identity is held by another process; waiting: {}", rdt.instanceId());
+                if (!waiting)
+                    log.warn("Node identity is held by another process; waiting: {}", rdt.instanceId());
                 waiting = true;
                 return;
             }
@@ -99,7 +104,8 @@ public class NodeIdentityLease implements SmartInitializingSingleton, AutoClosea
             try {
                 suspend();
             } catch (RuntimeException cleanupFailure) {
-                if (cleanupFailure != exception) exception.addSuppressed(cleanupFailure);
+                if (cleanupFailure != exception)
+                    exception.addSuppressed(cleanupFailure);
             }
             throw exception;
         }
@@ -116,14 +122,15 @@ public class NodeIdentityLease implements SmartInitializingSingleton, AutoClosea
     }
 
     public void requireHealthy() {
-        if (!isHealthy()) throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "Node identity lease unavailable; recovery is pending: " + rdt.instanceId());
+        if (!isHealthy())
+            throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION,
+                "Node identity lease unavailable; recovery is pending: " + rdt.instanceId());
     }
 
     public BooleanSupplier guard() {
         Lease acquired = lease;
         // A callback from a previous acquisition stays fenced after this node recovers.
-        return () -> !closed && healthy && acquired != null
-                && acquired.equals(lease) && leases.isHeld(acquired);
+        return () -> !closed && healthy && acquired != null && acquired.equals(lease) && leases.isHeld(acquired);
     }
 
     private String name() {
@@ -134,7 +141,8 @@ public class NodeIdentityLease implements SmartInitializingSingleton, AutoClosea
     public synchronized void close() {
         closed = true;
         healthy = false;
-        if (renewal != null) renewal.shutdownNow();
+        if (renewal != null)
+            renewal.shutdownNow();
         suspend();
         if (lease != null) {
             leases.release(lease);

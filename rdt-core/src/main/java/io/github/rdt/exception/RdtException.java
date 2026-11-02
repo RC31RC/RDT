@@ -7,6 +7,7 @@ public abstract class RdtException extends RuntimeException {
 
     /**
      * 创建 RDT 异常。
+     *
      * @param code 稳定的错误分类
      * @param message 不含敏感信息的诊断消息
      */
@@ -17,6 +18,7 @@ public abstract class RdtException extends RuntimeException {
 
     /**
      * 创建保留原始原因的 RDT 异常。
+     *
      * @param code 稳定的错误分类
      * @param message 诊断消息
      * @param cause 原始异常
@@ -28,6 +30,7 @@ public abstract class RdtException extends RuntimeException {
 
     /**
      * 返回稳定的错误分类。
+     *
      * @return 稳定的错误分类
      */
     public RdtErrorCode code() {

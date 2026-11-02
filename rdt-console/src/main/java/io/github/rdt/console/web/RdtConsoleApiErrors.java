@@ -28,20 +28,20 @@ public class RdtConsoleApiErrors {
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, String>> statusError(ResponseStatusException error) {
-        return ResponseEntity.status(error.getStatusCode()).body(Map.of("code", "CONSOLE_STATE",
-                "message", error.getReason() == null ? "Console request rejected" : error.getReason()));
+        return ResponseEntity.status(error.getStatusCode()).body(Map.of("code", "CONSOLE_STATE", "message",
+            error.getReason() == null ? "Console request rejected" : error.getReason()));
     }
 
     @ExceptionHandler(RedisException.class)
     public ResponseEntity<Map<String, String>> redisError(RedisException error) {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("code", "REDIS_OPERATION",
-                "message", "Redis request failed; check the selected runtime connection and ACL permissions"));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("code", "REDIS_OPERATION", "message",
+            "Redis request failed; check the selected runtime connection and ACL permissions"));
     }
 
     /** @param error 参数错误 @return API 错误响应 */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> argumentError(IllegalArgumentException error) {
-        return ResponseEntity.badRequest().body(Map.of("code", RdtErrorCode.CONFIGURATION.name(),
-                "message", error.getMessage()));
+        return ResponseEntity.badRequest()
+            .body(Map.of("code", RdtErrorCode.CONFIGURATION.name(), "message", error.getMessage()));
     }
 }

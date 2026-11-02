@@ -12,8 +12,8 @@ public record OutboxAppend(String namespace, String destination, QueueMode queue
         RdtSupport.component(destination);
         Objects.requireNonNull(message, "message");
         RdtSupport.require(queueMode == QueueMode.STREAM || queueMode == QueueMode.RELIABLE_BROADCAST,
-                "Outbox requires durable STREAM or RELIABLE_BROADCAST transport");
+            "Outbox requires durable STREAM or RELIABLE_BROADCAST transport");
         RdtSupport.require(message.orderingKey() == null,
-                "Outbox does not preserve order; use MessageQueueTemplate.sendOrdered outside Outbox");
+            "Outbox does not preserve order; use MessageQueueTemplate.sendOrdered outside Outbox");
     }
 }

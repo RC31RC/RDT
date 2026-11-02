@@ -29,12 +29,11 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /** Disposable JSON buckets with an optional local tier and region-scoped invalidation. */
 public final class RedissonCacheService implements CacheService, AutoCloseable {
-    private static final String READ_WITH_TTL =
-            """
-            local v = redis.call('GET', KEYS[1])
-            if not v then return {} end
-            return {v, redis.call('PTTL', KEYS[1])}
-            """;
+    private static final String READ_WITH_TTL = """
+        local v = redis.call('GET', KEYS[1])
+        if not v then return {} end
+        return {v, redis.call('PTTL', KEYS[1])}
+        """;
     private final RedissonClient client;
     private final KeySpace keys;
     private final KeySpace rootKeys;
@@ -49,36 +48,23 @@ public final class RedissonCacheService implements CacheService, AutoCloseable {
     @Override
     public CacheService region(String name) {
         RedissonCacheService selected = regions.get(name);
-        RdtSupport.require(
-                selected != null,
-                "Unknown cache region: "
-                        + name
-                        + "; configure rdt.cache.regions or create it with an explicit"
-                        + " CachePolicy");
+        RdtSupport.require(selected != null, "Unknown cache region: " + name
+            + "; configure rdt.cache.regions or create it with an explicit" + " CachePolicy");
         return selected;
     }
 
     @Override
     public CacheService region(String name, CachePolicy regionPolicy) {
         RdtSupport.component(name);
-        return regions.compute(
-                name,
-                (id, existing) -> {
-                    if (existing != null) {
-                        RdtSupport.require(
-                                existing.policy.equals(regionPolicy),
-                                "Conflicting policy for cache region " + name);
-                        return existing;
-                    }
-                    KeySpace regionKeys = new KeySpace(keys.namespace() + ":region:" + name);
-                    return new RedissonCacheService(
-                            client,
-                            regionKeys,
-                            json,
-                            regionPolicy,
-                            new RedissonLockTemplate(client, regionKeys),
-                            rootKeys);
-                });
+        return regions.compute(name, (id, existing) -> {
+            if (existing != null) {
+                RdtSupport.require(existing.policy.equals(regionPolicy), "Conflicting policy for cache region " + name);
+                return existing;
+            }
+            KeySpace regionKeys = new KeySpace(keys.namespace() + ":region:" + name);
+            return new RedissonCacheService(client, regionKeys, json, regionPolicy,
+                new RedissonLockTemplate(client, regionKeys), rootKeys);
+        });
     }
 
     /**
@@ -90,22 +76,13 @@ public final class RedissonCacheService implements CacheService, AutoCloseable {
      * @param policy 缓存保留策略
      * @param locks 缓存回源互斥锁
      */
-    public RedissonCacheService(
-            RedissonClient client,
-            KeySpace keys,
-            JsonCodec json,
-            CachePolicy policy,
-            DistributedLockTemplate locks) {
+    public RedissonCacheService(RedissonClient client, KeySpace keys, JsonCodec json, CachePolicy policy,
+        DistributedLockTemplate locks) {
         this(client, keys, json, policy, locks, keys);
     }
 
-    private RedissonCacheService(
-            RedissonClient client,
-            KeySpace keys,
-            JsonCodec json,
-            CachePolicy policy,
-            DistributedLockTemplate locks,
-            KeySpace rootKeys) {
+    private RedissonCacheService(RedissonClient client, KeySpace keys, JsonCodec json, CachePolicy policy,
+        DistributedLockTemplate locks, KeySpace rootKeys) {
         this.rootKeys = rootKeys;
         this.client = client;
         this.keys = keys;
@@ -132,31 +109,19 @@ public final class RedissonCacheService implements CacheService, AutoCloseable {
         }
         long version = local == null ? 0 : local.generation();
         long started = System.nanoTime();
-        List<Object> result =
-                RedisSupport.redis(
-                        "read cache",
-                        () ->
-                                client.getScript(StringCodec.INSTANCE)
-                                        .eval(
-                                                RScript.Mode.READ_ONLY,
-                                                READ_WITH_TTL,
-                                                RScript.ReturnType.LIST,
-                                                List.of(physical)));
+        List<Object> result = RedisSupport.redis("read cache", () -> client.getScript(StringCodec.INSTANCE)
+            .eval(RScript.Mode.READ_ONLY, READ_WITH_TTL, RScript.ReturnType.LIST, List.of(physical)));
         if (result.isEmpty()) {
             return new CacheEntry.Miss<>();
         }
-        String value = (String) result.getFirst();
-        long remaining = ((Number) result.get(1)).longValue();
+        String value = (String)result.getFirst();
+        long remaining = ((Number)result.get(1)).longValue();
         fillLocal(physical, value, remaining, started, version);
         return decode(value, type);
     }
 
-    private void fillLocal(
-            String physical,
-            String value,
-            long remainingMillis,
-            long startedNanos,
-            long observedGeneration) {
+    private void fillLocal(String physical, String value, long remainingMillis, long startedNanos,
+        long observedGeneration) {
         if (local == null) {
             return;
         }
@@ -164,9 +129,7 @@ public final class RedissonCacheService implements CacheService, AutoCloseable {
     }
 
     private <T> CacheEntry<T> decode(String value, Type type) {
-        return value == null
-                ? new CacheEntry.Miss<>()
-                : new CacheEntry.Hit<>(json.read(value, type));
+        return value == null ? new CacheEntry.Miss<>() : new CacheEntry.Hit<>(json.read(value, type));
     }
 
     @Override
@@ -174,22 +137,15 @@ public final class RedissonCacheService implements CacheService, AutoCloseable {
         String physical = keys.key("cache", key);
         String encoded = json.write(value);
         Duration retention = retention(value, ttl);
-        RedisSupport.redisRun(
-                "write cache",
-                () ->
-                        client.<String>getBucket(physical, StringCodec.INSTANCE)
-                                .set(encoded, retention));
+        RedisSupport.redisRun("write cache",
+            () -> client.<String>getBucket(physical, StringCodec.INSTANCE).set(encoded, retention));
         invalidate(physical);
     }
 
     private Duration retention(Object value, Duration ttl) {
         Duration base = value == null ? policy.nullTtl() : ttl == null ? policy.ttl() : ttl;
         RdtSupport.positive(base, "cache ttl");
-        long extra =
-                (long)
-                        (base.toMillis()
-                                * policy.jitter()
-                                * ThreadLocalRandom.current().nextDouble());
+        long extra = (long)(base.toMillis() * policy.jitter() * ThreadLocalRandom.current().nextDouble());
         return base.plusMillis(extra);
     }
 
@@ -203,33 +159,28 @@ public final class RedissonCacheService implements CacheService, AutoCloseable {
     @Override
     public void evict(String key) {
         String physical = keys.key("cache", key);
-        RedisSupport.redisRun(
-                "evict cache", () -> client.getBucket(physical, StringCodec.INSTANCE).delete());
+        RedisSupport.redisRun("evict cache", () -> client.getBucket(physical, StringCodec.INSTANCE).delete());
         invalidate(physical);
     }
 
     @Override
-    public <T> T getOrLoad(
-            String key, Type type, Duration ttl, boolean cacheNull, Callable<T> loader)
-            throws Exception {
+    public <T> T getOrLoad(String key, Type type, Duration ttl, boolean cacheNull, Callable<T> loader)
+        throws Exception {
         CacheEntry<T> cached = get(key, type);
         if (cached instanceof CacheEntry.Hit<T>(T value)) {
             return value;
         }
-        return locks.execute(
-                "cache-load:" + key,
-                LockOptions.defaults(),
-                () -> {
-                    CacheEntry<T> second = read(key, type, false);
-                    if (second instanceof CacheEntry.Hit<T>(T value)) {
-                        return value;
-                    }
-                    T loaded = loader.call();
-                    if (loaded != null || cacheNull) {
-                        put(key, loaded, ttl);
-                    }
-                    return loaded;
-                });
+        return locks.execute("cache-load:" + key, LockOptions.defaults(), () -> {
+            CacheEntry<T> second = read(key, type, false);
+            if (second instanceof CacheEntry.Hit<T>(T value)) {
+                return value;
+            }
+            T loaded = loader.call();
+            if (loaded != null || cacheNull) {
+                put(key, loaded, ttl);
+            }
+            return loaded;
+        });
     }
 
     @Override
@@ -242,46 +193,37 @@ public final class RedissonCacheService implements CacheService, AutoCloseable {
         for (String name : names) {
             String physical = keys.key("cache", name);
             String cached = local == null ? null : local.get(physical, started);
-            if (cached != null) result.put(name, decode(cached, type));
+            if (cached != null)
+                result.put(name, decode(cached, type));
             else
-                pending.put(
-                        name,
-                        batch.getScript(StringCodec.INSTANCE)
-                                .evalAsync(
-                                        RScript.Mode.READ_ONLY,
-                                        READ_WITH_TTL,
-                                        RScript.ReturnType.LIST,
-                                        List.of(physical)));
+                pending.put(name, batch.getScript(StringCodec.INSTANCE).evalAsync(RScript.Mode.READ_ONLY, READ_WITH_TTL,
+                    RScript.ReturnType.LIST, List.of(physical)));
         }
-        if (!pending.isEmpty()) batch.execute();
-        pending.forEach(
-                (name, future) -> {
-                    List<Object> row = future.toCompletableFuture().join();
-                    if (row.isEmpty()) result.put(name, new CacheEntry.Miss<>());
-                    else {
-                        String value = (String) row.getFirst();
-                        long remaining = ((Number) row.get(1)).longValue();
-                        String physical = keys.key("cache", name);
-                        fillLocal(physical, value, remaining, started, version);
-                        result.put(name, decode(value, type));
-                    }
-                });
+        if (!pending.isEmpty())
+            batch.execute();
+        pending.forEach((name, future) -> {
+            List<Object> row = future.toCompletableFuture().join();
+            if (row.isEmpty())
+                result.put(name, new CacheEntry.Miss<>());
+            else {
+                String value = (String)row.getFirst();
+                long remaining = ((Number)row.get(1)).longValue();
+                String physical = keys.key("cache", name);
+                fillLocal(physical, value, remaining, started, version);
+                result.put(name, decode(value, type));
+            }
+        });
         return result;
     }
 
     @Override
     public void putAll(Map<String, ?> values, Duration ttl) {
-        RedisSupport.redisRun(
-                "batch write cache",
-                () -> {
-                    RBatch batch = client.createBatch();
-                    values.forEach(
-                            (key, value) ->
-                                    batch.<String>getBucket(
-                                                    keys.key("cache", key), StringCodec.INSTANCE)
-                                            .setAsync(json.write(value), retention(value, ttl)));
-                    batch.execute();
-                });
+        RedisSupport.redisRun("batch write cache", () -> {
+            RBatch batch = client.createBatch();
+            values.forEach((key, value) -> batch.<String>getBucket(keys.key("cache", key), StringCodec.INSTANCE)
+                .setAsync(json.write(value), retention(value, ttl)));
+            batch.execute();
+        });
         values.keySet().forEach(key -> invalidate(keys.key("cache", key)));
     }
 
@@ -292,6 +234,7 @@ public final class RedissonCacheService implements CacheService, AutoCloseable {
         if (listenerId >= 0 && !client.isShutdown()) {
             invalidations.unsubscribe(listenerId);
         }
-        if (local != null) local.invalidate("*");
+        if (local != null)
+            local.invalidate("*");
     }
 }

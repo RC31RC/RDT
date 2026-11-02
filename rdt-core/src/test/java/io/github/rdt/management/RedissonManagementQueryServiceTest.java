@@ -41,8 +41,8 @@ class RedissonManagementQueryServiceTest {
         when(redisKeys.countExists(key)).thenReturn(1L);
         RMap<String, String> state = mock(RMap.class);
         when(client.<String, String>getMap(key, StringCodec.INSTANCE)).thenReturn(state);
-        when(state.readAllMap()).thenReturn(Map.of("next", "1000", "definition", "PT2M",
-                "displayName", "Warframe世界状态轮询"));
+        when(state.readAllMap())
+            .thenReturn(Map.of("next", "1000", "definition", "PT2M", "displayName", "Warframe世界状态轮询"));
         var queries = new RedissonManagementQueryService(client, keys, json);
         assertThat(queries.task("poll-v1").orElseThrow().displayName()).isEqualTo("Warframe世界状态轮询");
     }
@@ -70,7 +70,7 @@ class RedissonManagementQueryServiceTest {
         index("dead-letters");
         index("dead-letters-expiry");
         assertThat(new RedissonManagementQueryService(client, keys, json).overview())
-                .isEqualTo(new ManagementOverview(keys.namespace(), 0, 0, 0, 0, 0, 0, 0, false));
+            .isEqualTo(new ManagementOverview(keys.namespace(), 0, 0, 0, 0, 0, 0, 0, false));
         verifyNoInteractions(redisKeys);
     }
 
@@ -97,7 +97,7 @@ class RedissonManagementQueryServiceTest {
         when(stream.listGroups()).thenReturn(List.of(group));
         when(group.getPending()).thenReturn(2);
         assertThat(new RedissonManagementQueryService(client, keys, json).overview())
-                .isEqualTo(new ManagementOverview(keys.namespace(), 1, 7, 1, 2, 1, 1, 25, false));
+            .isEqualTo(new ManagementOverview(keys.namespace(), 1, 7, 1, 2, 1, 1, 25, false));
         verify(stream).size();
         verify(stream).listGroups();
         verifyNoInteractions(redisKeys);
@@ -106,8 +106,12 @@ class RedissonManagementQueryServiceTest {
     @SuppressWarnings("unchecked")
     private RScoredSortedSet<String> index(String kind) {
         RScoredSortedSet<String> index = mock(RScoredSortedSet.class);
-        when(client.<String>getScoredSortedSet(keys.key(kind.endsWith("-expiry") ? "management-expiry" : "management-index",kind.endsWith("-expiry") ? kind.substring(0,kind.length()-7) : kind), StringCodec.INSTANCE)).thenReturn(index);
-        when(index.getName()).thenReturn(keys.key(kind.endsWith("-expiry") ? "management-expiry" : "management-index", kind.endsWith("-expiry") ? kind.substring(0, kind.length()-7) : kind));
+        when(client.<
+            String>getScoredSortedSet(keys.key(kind.endsWith("-expiry") ? "management-expiry" : "management-index",
+                kind.endsWith("-expiry") ? kind.substring(0, kind.length() - 7) : kind), StringCodec.INSTANCE))
+            .thenReturn(index);
+        when(index.getName()).thenReturn(keys.key(kind.endsWith("-expiry") ? "management-expiry" : "management-index",
+            kind.endsWith("-expiry") ? kind.substring(0, kind.length() - 7) : kind));
         return index;
     }
 }

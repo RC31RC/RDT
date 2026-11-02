@@ -12,13 +12,22 @@ public interface ManagementQueryService {
     ManagementOverview overview();
 
     DeadLetterStats deadLetterStats(Duration recentWindow);
+
     ManagementPage<StreamView> streams(int offset, int limit);
+
     Optional<StreamView> stream(String destination);
+
     List<StreamMessageView> streamMessages(String destination, int limit);
+
     ManagementPage<TaskView> tasks(int offset, int limit);
+
     Optional<TaskView> task(String taskId);
+
     List<TaskResult> taskResults(String taskId, int offset, int limit);
+
     List<JobExecution> executions(String taskId, int offset, int limit);
+
     ManagementPage<DeadLetterView> deadLetters(int offset, int limit);
+
     List<RuntimeInstance> instances();
 }

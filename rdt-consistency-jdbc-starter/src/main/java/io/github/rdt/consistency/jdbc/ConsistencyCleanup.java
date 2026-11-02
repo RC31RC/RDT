@@ -21,11 +21,11 @@ public final class ConsistencyCleanup implements AutoCloseable {
     private final String namespace;
     private final RdtConsistencyProperties properties;
     private final AtomicBoolean started = new AtomicBoolean();
-    private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().daemon().name("rdt-consistency-cleanup").factory());
+    private final ScheduledExecutorService timer = Executors
+        .newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("rdt-consistency-cleanup").factory());
 
     public ConsistencyCleanup(JdbcOutboxStore outbox, JdbcInboxStore inbox, DistributedLockTemplate locks,
-                              String namespace, RdtConsistencyProperties properties) {
+        String namespace, RdtConsistencyProperties properties) {
         this.outbox = outbox;
         this.inbox = inbox;
         this.locks = locks;
@@ -34,7 +34,8 @@ public final class ConsistencyCleanup implements AutoCloseable {
     }
 
     public void start() {
-        if (started.compareAndSet(false, true)) schedule(Duration.ZERO);
+        if (started.compareAndSet(false, true))
+            schedule(Duration.ZERO);
     }
 
     private void schedule(Duration delay) {
@@ -45,20 +46,24 @@ public final class ConsistencyCleanup implements AutoCloseable {
     private void run() {
         Duration delay = properties.cleanupInterval();
         try {
-            if (cleanupOnce().backlog()) delay = properties.cleanupBacklogDelay();
+            if (cleanupOnce().backlog())
+                delay = properties.cleanupBacklogDelay();
         } catch (Exception error) {
-            if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+            if (error instanceof InterruptedException)
+                Thread.currentThread().interrupt();
             log.error("Consistency cleanup failed namespace={}", namespace, error);
         } finally {
-            if (!timer.isShutdown()) schedule(delay);
+            if (!timer.isShutdown())
+                schedule(delay);
         }
     }
 
     /** Each batch commits independently, including when invoked from a business transaction. */
     public CleanupResult cleanupOnce() throws Exception {
-        var handle = locks.tryLock("consistency-cleanup",
-                new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ZERO));
-        if (handle.isEmpty()) return new CleanupResult(false, 0, 0, false);
+        var handle =
+            locks.tryLock("consistency-cleanup", new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ZERO));
+        if (handle.isEmpty())
+            return new CleanupResult(false, 0, 0, false);
         try (var ignored = handle.get()) {
             int published = 0;
             int consumed = 0;
@@ -79,16 +84,18 @@ public final class ConsistencyCleanup implements AutoCloseable {
                     consumed += removed;
                     inboxDone = removed < batch || consumed == limit;
                 }
-                if (!outboxDone || !inboxDone) Thread.sleep(properties.cleanupPause());
+                if (!outboxDone || !inboxDone)
+                    Thread.sleep(properties.cleanupPause());
             }
             boolean backlog = published == limit || consumed == limit;
             log.info("Consistency cleanup namespace={} publishedOutbox={} inbox={} budgetPerTable={} backlog={}",
-                    namespace, published, consumed, limit, backlog);
+                namespace, published, consumed, limit, backlog);
             return new CleanupResult(true, published, consumed, backlog);
         }
     }
 
-    public record CleanupResult(boolean lockAcquired, int publishedOutbox, int inbox, boolean backlog) { }
+    public record CleanupResult(boolean lockAcquired, int publishedOutbox, int inbox, boolean backlog) {
+    }
 
     @Override
     public void close() {

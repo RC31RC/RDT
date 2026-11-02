@@ -31,36 +31,41 @@ public class RedisOwnerLeaseService {
 
     public Optional<Lease> acquire(String name, String owner, Duration ttl) {
         RdtSupport.require(name != null && !name.isBlank() && owner != null && !owner.isBlank(),
-                "Lease name and owner are required");
+            "Lease name and owner are required");
         validateTtl(ttl);
-        var lock = locks.tryLock("owner-acquire:" + name,
-                new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ZERO));
-        if (lock.isEmpty()) return Optional.empty();
+        var lock =
+            locks.tryLock("owner-acquire:" + name, new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ZERO));
+        if (lock.isEmpty())
+            return Optional.empty();
         try (var ignored = lock.get()) {
             String key = keys.key("owner", name);
-            if (redis.getBucket(key, StringCodec.INSTANCE).isExists()) return Optional.empty();
+            if (redis.getBucket(key, StringCodec.INSTANCE).isExists())
+                return Optional.empty();
             long fence = redis.getAtomicLong(keys.key("owner-fence", name)).incrementAndGet();
             String token = owner + ":" + fence + ":" + UUID.randomUUID();
             return redis.getBucket(key, StringCodec.INSTANCE).setIfAbsent(token, ttl)
-                    ? Optional.of(new Lease(name, token, fence)) : Optional.empty();
+                ? Optional.of(new Lease(name, token, fence)) : Optional.empty();
         }
     }
 
     public Optional<Lease> find(String name) {
         String token = redis.<String>getBucket(keys.key("owner", name), StringCodec.INSTANCE).get();
-        if (token == null) return Optional.empty();
+        if (token == null)
+            return Optional.empty();
         return Optional.of(decode(name, token));
     }
 
     /** Batch lookup is a read view, not permission to skip the final acquisition-token check. */
     public Map<String, Lease> findAll(Collection<String> names) {
-        if (names.isEmpty()) return Map.of();
+        if (names.isEmpty())
+            return Map.of();
         Map<String, String> values = redis.getBuckets(StringCodec.INSTANCE)
-                .get(names.stream().map(name -> keys.key("owner", name)).toArray(String[]::new));
+            .get(names.stream().map(name -> keys.key("owner", name)).toArray(String[]::new));
         Map<String, Lease> result = new LinkedHashMap<>();
         names.forEach(name -> {
             String token = values.get(keys.key("owner", name));
-            if (token != null) result.put(name, decode(name, token));
+            if (token != null)
+                result.put(name, decode(name, token));
         });
         return Map.copyOf(result);
     }
@@ -73,22 +78,23 @@ public class RedisOwnerLeaseService {
 
     public boolean renew(Lease lease, Duration ttl) {
         validateTtl(ttl);
-        return redis.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE,
+        return redis.getScript(StringCodec.INSTANCE)
+            .eval(RScript.Mode.READ_WRITE,
                 "if redis.call('get', KEYS[1]) == ARGV[1] then "
-                        + "return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end",
-                RScript.ReturnType.LONG, List.of(keys.key("owner", lease.name())),
-                lease.token(), ttl.toMillis()).equals(1L);
+                    + "return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end",
+                RScript.ReturnType.LONG, List.of(keys.key("owner", lease.name())), lease.token(), ttl.toMillis())
+            .equals(1L);
     }
 
     public boolean isHeld(Lease lease) {
-        return lease != null && lease.token().equals(
-                redis.getBucket(keys.key("owner", lease.name()), StringCodec.INSTANCE).get());
+        return lease != null
+            && lease.token().equals(redis.getBucket(keys.key("owner", lease.name()), StringCodec.INSTANCE).get());
     }
 
     public void release(Lease lease) {
         redis.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE,
-                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
-                RScript.ReturnType.LONG, List.of(keys.key("owner", lease.name())), lease.token());
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+            RScript.ReturnType.LONG, List.of(keys.key("owner", lease.name())), lease.token());
     }
 
     public record Lease(String name, String token, long fencingVersion) {
@@ -99,6 +105,6 @@ public class RedisOwnerLeaseService {
 
     private static void validateTtl(Duration ttl) {
         RdtSupport.require(ttl != null && !ttl.isNegative() && ttl.toMillis() > 0,
-                "Lease TTL must be at least one millisecond");
+            "Lease TTL must be at least one millisecond");
     }
 }

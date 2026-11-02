@@ -12,7 +12,6 @@ package io.github.rdt.management;
  * @param taskFailureCount 任务失败记录数量
  * @param deadLetterCount 死信数量
  */
-public record ManagementOverview(String namespace, long streamCount, long streamLength,
-                                  long groupCount, long pendingCount, long taskCount,
-                                  long taskFailureCount, long deadLetterCount, boolean partial) {
+public record ManagementOverview(String namespace, long streamCount, long streamLength, long groupCount,
+    long pendingCount, long taskCount, long taskFailureCount, long deadLetterCount, boolean partial) {
 }

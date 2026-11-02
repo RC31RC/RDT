@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 public sealed interface ScheduleSpec permits ScheduleSpec.FixedRate, ScheduleSpec.FixedDelay, ScheduleSpec.Cron {
     /**
      * 按时钟固定频率触发；合并错过的周期，不集中补偿执行。
+     *
      * @param period 时间间隔
      * @param initialDelay 首次集群注册后的延迟
      */
@@ -23,6 +24,7 @@ public sealed interface ScheduleSpec permits ScheduleSpec.FixedRate, ScheduleSpe
 
     /**
      * 集群范围内从本次完成到下次开始的固定延迟。
+     *
      * @param delay 完成后的延迟
      * @param initialDelay 首次集群注册后的延迟
      */
@@ -37,9 +39,10 @@ public sealed interface ScheduleSpec permits ScheduleSpec.FixedRate, ScheduleSpe
     /**
      * Spring cron 调度。
      *
-     * <p>支持常见的五字段表达式（分、时、日、月、星期）和 Spring 六字段表达式
-     * （秒、分、时、日、月、星期）。五字段表达式会自动补充秒字段 {@code 0}，
-     * 六字段表达式保持原有语义。Quartz 七字段表达式不在 RDT 的支持范围内。</p>
+     * <p>
+     * 支持常见的五字段表达式（分、时、日、月、星期）和 Spring 六字段表达式 （秒、分、时、日、月、星期）。五字段表达式会自动补充秒字段 {@code 0}， 六字段表达式保持原有语义。Quartz 七字段表达式不在 RDT
+     * 的支持范围内。
+     * </p>
      *
      * @param expression 五字段或六字段 cron 表达式
      * @param zone 明确指定的时区
@@ -59,15 +62,14 @@ public sealed interface ScheduleSpec permits ScheduleSpec.FixedRate, ScheduleSpe
          */
         private static String normalize(String expression) {
             RdtSupport.require(expression != null && !expression.isBlank(), "Invalid cron schedule");
-            String normalized = Arrays.stream(expression.strip().split("\\s+"))
-                    .collect(Collectors.joining(" "));
+            String normalized = Arrays.stream(expression.strip().split("\\s+")).collect(Collectors.joining(" "));
             String[] fields = normalized.split(" ");
             if (fields.length == 5) {
                 return "0 " + normalized;
             }
             RdtSupport.require(fields.length == 6,
-                    "Cron must contain five fields (minute hour day month weekday) or six fields "
-                            + "(second minute hour day month weekday)");
+                "Cron must contain five fields (minute hour day month weekday) or six fields "
+                    + "(second minute hour day month weekday)");
             return normalized;
         }
     }

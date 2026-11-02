@@ -71,9 +71,8 @@ class ClusterScheduleIT {
         Config config = new Config();
         config.setThreads(2).setNettyThreads(2).setLockWatchdogTimeout(3000);
         config.setPassword(System.getenv("REDIS_PASSWORD"));
-        config.useSingleServer().setAddress(System.getProperty("rdt.it.redis"))
-                .setConnectionMinimumIdleSize(1).setConnectionPoolSize(8)
-                .setSubscriptionConnectionMinimumIdleSize(1).setSubscriptionConnectionPoolSize(4);
+        config.useSingleServer().setAddress(System.getProperty("rdt.it.redis")).setConnectionMinimumIdleSize(1)
+            .setConnectionPoolSize(8).setSubscriptionConnectionMinimumIdleSize(1).setSubscriptionConnectionPoolSize(4);
         return Redisson.create(config);
     }
 
@@ -81,15 +80,23 @@ class ClusterScheduleIT {
         return scheduler(client, ScheduleDefinitionChangePolicy.FAIL);
     }
 
-    private RedissonScheduledTaskTemplate scheduler(RedissonClient client,
-                                                    ScheduleDefinitionChangePolicy policy) {
-        return new RedissonScheduledTaskTemplate(client, keys, new JsonCodec(), new RedissonLockTemplate(client, keys), new RdtProperties.Schedule(true, Duration.ofMillis(250), Duration.ofMinutes(5), Duration.ofSeconds(10), policy, 2, 3, Duration.ZERO, 1, Duration.ofHours(1), ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ZoneId.of("UTC"), ScheduleFailureMode.CONTINUE, 128, Duration.ofSeconds(30), 1000).settings(), new io.github.rdt.spring.schedule.SpringCronParser(), leasedIdentity(client, keys, null), RetryClassifier.infrastructureFailures());
+    private RedissonScheduledTaskTemplate scheduler(RedissonClient client, ScheduleDefinitionChangePolicy policy) {
+        return new RedissonScheduledTaskTemplate(client, keys, new JsonCodec(), new RedissonLockTemplate(client, keys),
+            new RdtProperties.Schedule(true, Duration.ofMillis(250), Duration.ofMinutes(5), Duration.ofSeconds(10),
+                policy, 2, 3, Duration.ZERO, 1, Duration.ofHours(1), ScheduleMisfirePolicy.FIRE_ONCE,
+                Duration.ofMinutes(1), ZoneId.of("UTC"), ScheduleFailureMode.CONTINUE, 128, Duration.ofSeconds(30),
+                1000).settings(),
+            new io.github.rdt.spring.schedule.SpringCronParser(), leasedIdentity(client, keys, null),
+            RetryClassifier.infrastructureFailures());
     }
 
     @Test
     void drainingKeepsRunningAttemptLeaseAndAllowsCompletion() throws Exception {
         var identity = leasedIdentity(a, keys, "draining-worker");
-        var properties = new RdtProperties.Schedule(true, Duration.ofMillis(100), Duration.ofMinutes(5), Duration.ofSeconds(4), ScheduleDefinitionChangePolicy.FAIL, 1, 3, Duration.ZERO, 1, Duration.ofHours(1), ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ZoneId.of("UTC"), ScheduleFailureMode.CONTINUE, 128, Duration.ofMillis(900), 1000);
+        var properties = new RdtProperties.Schedule(true, Duration.ofMillis(100), Duration.ofMinutes(5),
+            Duration.ofSeconds(4), ScheduleDefinitionChangePolicy.FAIL, 1, 3, Duration.ZERO, 1, Duration.ofHours(1),
+            ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ZoneId.of("UTC"), ScheduleFailureMode.CONTINUE, 128,
+            Duration.ofMillis(900), 1000);
         var started = new CountDownLatch(1);
         AtomicInteger calls = new AtomicInteger();
         String id = "draining-job";
@@ -99,16 +106,20 @@ class ClusterScheduleIT {
             Thread.sleep(2200);
             return 42;
         };
-        try (var first = new RedissonScheduledTaskTemplate(a, keys, new JsonCodec(), new RedissonLockTemplate(a, keys), properties.settings(), new io.github.rdt.spring.schedule.SpringCronParser(), identity, RetryClassifier.infrastructureFailures());
-             var second = new RedissonScheduledTaskTemplate(b, keys, new JsonCodec(), new RedissonLockTemplate(b, keys), properties.settings(), new io.github.rdt.spring.schedule.SpringCronParser(), leasedIdentity(b, keys, "standby-worker"), RetryClassifier.infrastructureFailures())) {
+        try (
+            var first = new RedissonScheduledTaskTemplate(a, keys, new JsonCodec(), new RedissonLockTemplate(a, keys),
+                properties.settings(), new io.github.rdt.spring.schedule.SpringCronParser(), identity,
+                RetryClassifier.infrastructureFailures());
+            var second = new RedissonScheduledTaskTemplate(b, keys, new JsonCodec(), new RedissonLockTemplate(b, keys),
+                properties.settings(), new io.github.rdt.spring.schedule.SpringCronParser(),
+                leasedIdentity(b, keys, "standby-worker"), RetryClassifier.infrastructureFailures())) {
             var cadence = new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO);
             first.register(id, cadence, task);
             assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
             identity.draining(true);
             second.register(id, cadence, task);
-            await().atMost(Duration.ofSeconds(6)).untilAsserted(() ->
-                    assertThat(first.results(id, 0, 200)).singleElement()
-                            .satisfies(result -> assertThat(result.successful()).isTrue()));
+            await().atMost(Duration.ofSeconds(6)).untilAsserted(() -> assertThat(first.results(id, 0, 200))
+                .singleElement().satisfies(result -> assertThat(result.successful()).isTrue()));
             assertThat(calls).hasValue(1);
             assertThat(first.results(id, 0, 200)).allSatisfy(result -> assertThat(result.attempt()).isEqualTo(1));
         }
@@ -119,20 +130,27 @@ class ClusterScheduleIT {
         var identity = leasedIdentity(a, keys, "pressure-inflight");
         var pressure = new AdaptiveAdmissionController(.85, .65, .9, .7, Duration.ZERO);
         identity.admission(pressure);
-        var properties = new RdtProperties.Schedule(true, Duration.ofMillis(100), Duration.ofMinutes(5), Duration.ofSeconds(4),
-                ScheduleDefinitionChangePolicy.FAIL, 1, 3, Duration.ZERO, 1, Duration.ofHours(1), ScheduleMisfirePolicy.FIRE_ONCE,
-                Duration.ofMinutes(1), ZoneId.of("UTC"), ScheduleFailureMode.CONTINUE, 128, Duration.ofMillis(900), 1000);
+        var properties = new RdtProperties.Schedule(true, Duration.ofMillis(100), Duration.ofMinutes(5),
+            Duration.ofSeconds(4), ScheduleDefinitionChangePolicy.FAIL, 1, 3, Duration.ZERO, 1, Duration.ofHours(1),
+            ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ZoneId.of("UTC"), ScheduleFailureMode.CONTINUE, 128,
+            Duration.ofMillis(900), 1000);
         var started = new CountDownLatch(1);
         var deferred = new AtomicInteger();
-        try (var scheduler = new RedissonScheduledTaskTemplate(a, keys, new JsonCodec(), new RedissonLockTemplate(a, keys), properties.settings(), new io.github.rdt.spring.schedule.SpringCronParser(), identity, RetryClassifier.infrastructureFailures())) {
+        try (var scheduler = new RedissonScheduledTaskTemplate(a, keys, new JsonCodec(),
+            new RedissonLockTemplate(a, keys), properties.settings(),
+            new io.github.rdt.spring.schedule.SpringCronParser(), identity, RetryClassifier.infrastructureFailures())) {
             var cadence = new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO);
-            scheduler.register("pressure-running", cadence, () -> { started.countDown(); Thread.sleep(2200); return "done"; });
+            scheduler.register("pressure-running", cadence, () -> {
+                started.countDown();
+                Thread.sleep(2200);
+                return "done";
+            });
             assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
             pressure.refresh(1, .1, System.currentTimeMillis());
             scheduler.register("pressure-deferred", cadence, deferred::incrementAndGet);
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                    assertThat(scheduler.results("pressure-running", 0, 10)).singleElement()
-                            .satisfies(result -> assertThat(result.successful()).isTrue()));
+            await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(scheduler.results("pressure-running", 0, 10)).singleElement()
+                    .satisfies(result -> assertThat(result.successful()).isTrue()));
             assertThat(deferred).hasValue(0);
             assertThat(identity.guard().getAsBoolean()).isTrue();
             pressure.refresh(.1, .1, System.currentTimeMillis());
@@ -145,14 +163,15 @@ class ClusterScheduleIT {
         String id = "unavailable-worker-job";
         try (var scheduler = scheduler(a)) {
             scheduler.register(id, new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO),
-                    ScheduleOptions.builder().route(JobRoute.SPECIFIED).targetInstanceId("not-online").build(),
-                    () -> { throw new AssertionError("Must not run on a different worker"); });
+                ScheduleOptions.builder().route(JobRoute.SPECIFIED).targetInstanceId("not-online").build(), () -> {
+                    throw new AssertionError("Must not run on a different worker");
+                });
             var query = new RedissonManagementQueryService(a, keys, new JsonCodec());
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                    assertThat(query.executions(id, 0, 10)).singleElement().satisfies(execution -> {
-                        assertThat(execution.status()).isEqualTo("WAITING");
-                        assertThat(execution.attempt()).isZero();
-                    }));
+            await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(query.executions(id, 0, 10)).singleElement().satisfies(execution -> {
+                    assertThat(execution.status()).isEqualTo("WAITING");
+                    assertThat(execution.attempt()).isZero();
+                }));
             assertThat(scheduler.results(id, 0, 200)).isEmpty();
         }
     }
@@ -204,8 +223,8 @@ class ClusterScheduleIT {
 
             String invalidTaskId = taskId + "-invalid";
             first.register(invalidTaskId, "状态修复测试", spec, () -> null);
-            RMap<String, String> invalidState = a.getMap(
-                    keys.key("schedule-state", invalidTaskId), StringCodec.INSTANCE);
+            RMap<String, String> invalidState =
+                a.getMap(keys.key("schedule-state", invalidTaskId), StringCodec.INSTANCE);
             invalidState.fastPut("next", "not-a-number");
             try (var third = scheduler(b)) {
                 third.register(invalidTaskId, "状态修复测试", spec, () -> null);
@@ -219,14 +238,19 @@ class ClusterScheduleIT {
         String taskId = "short-result-ttl-v1";
         var json = new JsonCodec();
         var queries = new RedissonManagementQueryService(b, keys, json);
-        try (var scheduler = new RedissonScheduledTaskTemplate(a, keys, json, new RedissonLockTemplate(a, keys), new RdtProperties.Schedule(true, Duration.ofMillis(100), Duration.ofSeconds(2), Duration.ofSeconds(3), ScheduleDefinitionChangePolicy.FAIL, 1, 3, Duration.ZERO, 1, Duration.ofHours(1), ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ZoneId.of("UTC"), ScheduleFailureMode.CONTINUE, 128, Duration.ofSeconds(30), 1000).settings(), new io.github.rdt.spring.schedule.SpringCronParser(), leasedIdentity(a, keys, null), RetryClassifier.infrastructureFailures())) {
+        try (var scheduler = new RedissonScheduledTaskTemplate(a, keys, json, new RedissonLockTemplate(a, keys),
+            new RdtProperties.Schedule(true, Duration.ofMillis(100), Duration.ofSeconds(2), Duration.ofSeconds(3),
+                ScheduleDefinitionChangePolicy.FAIL, 1, 3, Duration.ZERO, 1, Duration.ofHours(1),
+                ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ZoneId.of("UTC"), ScheduleFailureMode.CONTINUE,
+                128, Duration.ofSeconds(30), 1000).settings(),
+            new io.github.rdt.spring.schedule.SpringCronParser(), leasedIdentity(a, keys, null),
+            RetryClassifier.infrastructureFailures())) {
             scheduler.register(taskId, "记录保留测试", new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO),
-                    () -> "完成");
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                    assertThat(queries.taskResults(taskId, 0, 200)).singleElement()
-                            .satisfies(result -> assertThat(result.successful()).isTrue()));
-            await().atMost(Duration.ofSeconds(6)).untilAsserted(() ->
-                    assertThat(queries.taskResults(taskId, 0, 200)).isEmpty());
+                () -> "完成");
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(queries.taskResults(taskId, 0, 200))
+                .singleElement().satisfies(result -> assertThat(result.successful()).isTrue()));
+            await().atMost(Duration.ofSeconds(6))
+                .untilAsserted(() -> assertThat(queries.taskResults(taskId, 0, 200)).isEmpty());
             assertThat(queries.task(taskId).orElseThrow().displayName()).isEqualTo("记录保留测试");
         }
     }
@@ -277,12 +301,12 @@ class ClusterScheduleIT {
             await().atMost(Duration.ofSeconds(25)).until(() -> calls.get() >= 3);
         }
         List<TaskResult> results = first.results("delay:v1", 0, 200).stream()
-                .sorted(Comparator.comparing(result -> result.scheduledAt())).toList();
+            .sorted(Comparator.comparing(result -> result.scheduledAt())).toList();
         assertThat(results.getFirst().successful()).isFalse();
         assertThat(results.getLast().successful()).isTrue();
         for (int i = 1; i < results.size(); i++) {
             assertThat(Duration.between(Instant.parse(results.get(i - 1).completedAt()),
-                    Instant.parse(results.get(i).startedAt()))).isGreaterThanOrEqualTo(Duration.ofSeconds(1));
+                Instant.parse(results.get(i).startedAt()))).isGreaterThanOrEqualTo(Duration.ofSeconds(1));
         }
     }
 
@@ -292,10 +316,9 @@ class ClusterScheduleIT {
         AtomicInteger calls = new AtomicInteger();
         ScheduleSpec.Cron spec = new ScheduleSpec.Cron("0 0 4 * * *", ZoneId.of("Asia/Shanghai"));
         RMap<String, String> state = a.getMap(keys.key("schedule-state", taskId), StringCodec.INSTANCE);
-        try (RedissonScheduledTaskTemplate first = scheduler(a);
-             RedissonScheduledTaskTemplate second = scheduler(b)) {
+        try (RedissonScheduledTaskTemplate first = scheduler(a); RedissonScheduledTaskTemplate second = scheduler(b)) {
             ScheduleOptions retries = ScheduleOptions.builder().failureMode(ScheduleFailureMode.RETRY)
-                    .retryDelay(Duration.ofSeconds(1)).build();
+                .retryDelay(Duration.ofSeconds(1)).build();
             first.register(taskId, "失败重试测试", spec, retries, () -> {
                 if (calls.incrementAndGet() == 1) {
                     throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "expected test failure");
@@ -309,35 +332,36 @@ class ClusterScheduleIT {
                 return calls.get();
             });
             assertThat(new RedissonManagementCommandService(a, keys, new RedissonLockTemplate(a, keys), new JsonCodec())
-                    .triggerTask(taskId)).isTrue();
+                .triggerTask(taskId)).isTrue();
 
             await().atMost(Duration.ofSeconds(15)).until(() -> calls.get() >= 2);
 
-            List<TaskResult> results = first.results(taskId, 0, 200).stream()
-                    .sorted(Comparator.comparing(TaskResult::startedAt)).toList();
+            List<TaskResult> results =
+                first.results(taskId, 0, 200).stream().sorted(Comparator.comparing(TaskResult::startedAt)).toList();
             assertThat(results).hasSize(2);
             assertThat(results.getFirst().successful()).isFalse();
             assertThat(results.getLast().successful()).isTrue();
             assertThat(Duration.between(Instant.parse(results.getFirst().completedAt()),
-                    Instant.parse(results.getLast().startedAt()))).isGreaterThanOrEqualTo(Duration.ofMillis(900));
+                Instant.parse(results.getLast().startedAt()))).isGreaterThanOrEqualTo(Duration.ofMillis(900));
             assertThat(Long.parseLong(state.get("next")))
-                    .isGreaterThan(System.currentTimeMillis() + Duration.ofHours(1).toMillis());
+                .isGreaterThan(System.currentTimeMillis() + Duration.ofHours(1).toMillis());
         }
     }
 
     @Test
     void schedulerUsesTheApplicationClassifierRatherThanExceptionClassNamesOrCauses() {
-        var settings = new SchedulerSettings(Duration.ofMillis(100), Duration.ofMinutes(5),
-                Duration.ofSeconds(2), 2, 32, Duration.ofSeconds(10),
-                new SchedulePolicy(new RetryPolicy(3, Duration.ofMillis(100), 2, Duration.ofSeconds(1)),
-                        Duration.ofMinutes(5), ScheduleDefinitionChangePolicy.FAIL,
-                        ScheduleMisfirePolicy.FIRE_ONCE, Duration.ofMinutes(1), ScheduleFailureMode.RETRY), 1000);
+        var settings = new SchedulerSettings(Duration.ofMillis(100), Duration.ofMinutes(5), Duration.ofSeconds(2), 2,
+            32, Duration.ofSeconds(10),
+            new SchedulePolicy(new RetryPolicy(3, Duration.ofMillis(100), 2, Duration.ofSeconds(1)),
+                Duration.ofMinutes(5), ScheduleDefinitionChangePolicy.FAIL, ScheduleMisfirePolicy.FIRE_ONCE,
+                Duration.ofMinutes(1), ScheduleFailureMode.RETRY),
+            1000);
         var calls = new AtomicInteger();
         var businessCalls = new AtomicInteger();
         RetryClassifier classifier = failure -> failure instanceof ApplicationSystemFailure;
-        try (var scheduler = new RedissonScheduledTaskTemplate(a, keys, new JsonCodec(),
-                new RedissonLockTemplate(a, keys), settings, new SpringCronParser(),
-                leasedIdentity(a, keys, "classifier-scheduler"), classifier)) {
+        try (var scheduler =
+            new RedissonScheduledTaskTemplate(a, keys, new JsonCodec(), new RedissonLockTemplate(a, keys), settings,
+                new SpringCronParser(), leasedIdentity(a, keys, "classifier-scheduler"), classifier)) {
             var cadence = new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO);
             scheduler.register("classified-system", cadence, () -> {
                 calls.incrementAndGet();
@@ -356,14 +380,14 @@ class ClusterScheduleIT {
         }
     }
 
-    private static final class ApplicationSystemFailure extends RuntimeException { }
+    private static final class ApplicationSystemFailure extends RuntimeException {}
 
     @Test
     void permanentAndUnknownFailuresDoNotRetryEvenWhenTaskEnablesRetry() {
         var businessCalls = new AtomicInteger();
         var unknownCalls = new AtomicInteger();
-        var options = ScheduleOptions.builder().failureMode(ScheduleFailureMode.RETRY)
-                .maxAttempts(5).retryDelay(Duration.ofMillis(100)).build();
+        var options = ScheduleOptions.builder().failureMode(ScheduleFailureMode.RETRY).maxAttempts(5)
+            .retryDelay(Duration.ofMillis(100)).build();
         var cadence = new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO);
         try (var scheduler = scheduler(a)) {
             scheduler.register("permanent-failure", cadence, options, () -> {
@@ -389,13 +413,8 @@ class ClusterScheduleIT {
     void taskOptionsBoundRetryAttemptsAndBackoff() {
         String taskId = "task-options-retry-v1";
         AtomicInteger calls = new AtomicInteger();
-        ScheduleOptions policy = ScheduleOptions.builder()
-                .failureMode(ScheduleFailureMode.RETRY)
-                .maxAttempts(2)
-                .retryDelay(Duration.ofMillis(100))
-                .retryMultiplier(2)
-                .maxRetryDelay(Duration.ofMillis(200))
-                .build();
+        ScheduleOptions policy = ScheduleOptions.builder().failureMode(ScheduleFailureMode.RETRY).maxAttempts(2)
+            .retryDelay(Duration.ofMillis(100)).retryMultiplier(2).maxRetryDelay(Duration.ofMillis(200)).build();
         try (RedissonScheduledTaskTemplate scheduler = scheduler(a)) {
             scheduler.register(taskId, new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ZERO), policy, () -> {
                 calls.incrementAndGet();
@@ -414,23 +433,23 @@ class ClusterScheduleIT {
     @Test
     void continueModeKeepsCronTimelineEvenWithRetryParameters() {
         String taskId = "continue-cron";
-        var options = ScheduleOptions.builder().failureMode(ScheduleFailureMode.CONTINUE)
-                .maxAttempts(5).retryDelay(Duration.ofMillis(10)).build();
+        var options = ScheduleOptions.builder().failureMode(ScheduleFailureMode.CONTINUE).maxAttempts(5)
+            .retryDelay(Duration.ofMillis(10)).build();
         try (var scheduler = scheduler(a)) {
             scheduler.register(taskId, new ScheduleSpec.Cron("*/2 * * * * *", ZoneId.of("UTC")), options, () -> {
                 throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "expected failure on every cron trigger");
             });
-            await().atMost(Duration.ofSeconds(9)).untilAsserted(() ->
-                    assertThat(scheduler.results(taskId, 0, 200)).hasSizeGreaterThanOrEqualTo(3)
-                            .allMatch(result -> result.completedAt() != null && !result.successful()));
+            await().atMost(Duration.ofSeconds(9))
+                .untilAsserted(() -> assertThat(scheduler.results(taskId, 0, 200)).hasSizeGreaterThanOrEqualTo(3)
+                    .allMatch(result -> result.completedAt() != null && !result.successful()));
             var times = scheduler.results(taskId, 0, 200).stream()
-                    .map(result -> Instant.parse(result.scheduledAt()).toEpochMilli()).sorted().toList();
+                .map(result -> Instant.parse(result.scheduledAt()).toEpochMilli()).sorted().toList();
             assertThat(times).allMatch(time -> time % 2000 == 0);
             for (int i = 1; i < times.size(); i++) {
                 assertThat(times.get(i) - times.get(i - 1)).isGreaterThanOrEqualTo(2000);
             }
             assertThat(a.<String, String>getMap(keys.key("schedule-state", taskId), StringCodec.INSTANCE)
-                    .containsKey("retryAt")).isFalse();
+                .containsKey("retryAt")).isFalse();
         }
     }
 
@@ -438,9 +457,8 @@ class ClusterScheduleIT {
     void retryStateSurvivesNodeSwitchWithoutOverwritingRegularWatermark() {
         String taskId = "retry-failover";
         AtomicInteger calls = new AtomicInteger();
-        var options = ScheduleOptions.builder().failureMode(ScheduleFailureMode.RETRY)
-                .maxAttempts(3).retryDelay(Duration.ofMillis(700)).retryMultiplier(2)
-                .maxRetryDelay(Duration.ofSeconds(2)).build();
+        var options = ScheduleOptions.builder().failureMode(ScheduleFailureMode.RETRY).maxAttempts(3)
+            .retryDelay(Duration.ofMillis(700)).retryMultiplier(2).maxRetryDelay(Duration.ofSeconds(2)).build();
         var cadence = new ScheduleSpec.FixedRate(Duration.ofHours(1), Duration.ZERO);
         Callable<Object> failure = () -> {
             calls.incrementAndGet();
@@ -459,24 +477,26 @@ class ClusterScheduleIT {
             });
             long regularNext = Long.parseLong(state.get("next"));
             assertThat(regularNext).isGreaterThan(System.currentTimeMillis() + Duration.ofMinutes(50).toMillis());
-            assertThat(new JsonCodec().<JobExecution>read(state.get("execution"), JobExecution.class).attempt()).isEqualTo(1);
+            assertThat(new JsonCodec().<JobExecution>read(state.get("execution"), JobExecution.class).attempt())
+                .isEqualTo(1);
             registration.close();
             second.register(taskId, cadence, options, failure);
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
                 assertThat(calls).hasValue(3);
-                assertThat(new JsonCodec().<JobExecution>read(state.get("execution"), JobExecution.class).status()).isEqualTo("FAILED");
+                assertThat(new JsonCodec().<JobExecution>read(state.get("execution"), JobExecution.class).status())
+                    .isEqualTo("FAILED");
                 assertThat(second.results(taskId, 0, 200)).hasSize(3)
-                        .allMatch(result -> result.completedAt() != null && !result.successful());
+                    .allMatch(result -> result.completedAt() != null && !result.successful());
             });
             assertThat(Long.parseLong(state.get("next"))).isEqualTo(regularNext);
-            var history = second.results(taskId, 0, 200).stream()
-                    .sorted(Comparator.comparing(TaskResult::startedAt)).toList();
+            var history =
+                second.results(taskId, 0, 200).stream().sorted(Comparator.comparing(TaskResult::startedAt)).toList();
             assertThat(Duration.between(Instant.parse(history.get(0).completedAt()),
-                    Instant.parse(history.get(1).startedAt()))).isGreaterThanOrEqualTo(Duration.ofMillis(700));
+                Instant.parse(history.get(1).startedAt()))).isGreaterThanOrEqualTo(Duration.ofMillis(700));
             assertThat(Duration.between(Instant.parse(history.get(1).completedAt()),
-                    Instant.parse(history.get(2).startedAt()))).isGreaterThanOrEqualTo(Duration.ofMillis(1400));
+                Instant.parse(history.get(2).startedAt()))).isGreaterThanOrEqualTo(Duration.ofMillis(1400));
             await().during(Duration.ofMillis(600)).atMost(Duration.ofSeconds(2))
-                    .untilAsserted(() -> assertThat(calls).hasValue(3));
+                .untilAsserted(() -> assertThat(calls).hasValue(3));
         }
     }
 
@@ -484,30 +504,27 @@ class ClusterScheduleIT {
     void cronCancellationAndConflictingDefinitionsAreExplicit() {
         AtomicInteger calls = new AtomicInteger();
         ScheduleSpec.Cron spec = new ScheduleSpec.Cron("*/2 * * * * *", ZoneId.of("UTC"));
-        try (RedissonScheduledTaskTemplate first = scheduler(a);
-             RedissonScheduledTaskTemplate second = scheduler(b)) {
+        try (RedissonScheduledTaskTemplate first = scheduler(a); RedissonScheduledTaskTemplate second = scheduler(b)) {
             Subscription registration = first.register("cron:v1", spec, calls::incrementAndGet);
             assertThatThrownBy(() -> second.register("cron:v1",
-                    new ScheduleSpec.Cron("*/3 * * * * *", ZoneId.of("UTC")), calls::incrementAndGet))
-                    .isInstanceOf(RdtException.class);
+                new ScheduleSpec.Cron("*/3 * * * * *", ZoneId.of("UTC")), calls::incrementAndGet))
+                .isInstanceOf(RdtException.class);
             await().atMost(Duration.ofSeconds(12)).until(() -> calls.get() >= 1);
             registration.close();
         }
         int stopped = calls.get();
         await().during(Duration.ofSeconds(2)).atMost(Duration.ofSeconds(4))
-                .untilAsserted(() -> assertThat(calls).hasValue(stopped));
+            .untilAsserted(() -> assertThat(calls).hasValue(stopped));
     }
 
     @Test
     void updatePolicyKeepsTaskIdAndRefreshesDefinitionAndNextTime() {
         String taskId = "schedule-definition-update-v1";
         var queries = new RedissonManagementQueryService(b, keys, new JsonCodec());
-        ScheduleSpec.FixedDelay original = new ScheduleSpec.FixedDelay(
-                Duration.ofHours(1), Duration.ofHours(1));
-        ScheduleSpec.FixedDelay updated = new ScheduleSpec.FixedDelay(
-                Duration.ofHours(2), Duration.ofMinutes(10));
+        ScheduleSpec.FixedDelay original = new ScheduleSpec.FixedDelay(Duration.ofHours(1), Duration.ofHours(1));
+        ScheduleSpec.FixedDelay updated = new ScheduleSpec.FixedDelay(Duration.ofHours(2), Duration.ofMinutes(10));
         try (RedissonScheduledTaskTemplate first = scheduler(a, ScheduleDefinitionChangePolicy.UPDATE);
-             RedissonScheduledTaskTemplate second = scheduler(b, ScheduleDefinitionChangePolicy.UPDATE)) {
+            RedissonScheduledTaskTemplate second = scheduler(b, ScheduleDefinitionChangePolicy.UPDATE)) {
             first.register(taskId, "调度定义更新测试", original, () -> null);
             long oldNext = queries.task(taskId).orElseThrow().nextAtMillis();
 
@@ -518,17 +535,16 @@ class ClusterScheduleIT {
             assertThat(view.definition()).isEqualTo(updated.toString());
             assertThat(view.nextAtMillis()).isNotEqualTo(oldNext);
             assertThat(view.nextAtMillis()).isGreaterThan(System.currentTimeMillis());
-            await().during(Duration.ofMillis(600)).atMost(Duration.ofSeconds(2))
-                    .untilAsserted(() -> assertThat(queries.task(taskId).orElseThrow().nextAtMillis())
-                            .isEqualTo(view.nextAtMillis()));
+            await().during(Duration.ofMillis(600)).atMost(Duration.ofSeconds(2)).untilAsserted(
+                () -> assertThat(queries.task(taskId).orElseThrow().nextAtMillis()).isEqualTo(view.nextAtMillis()));
         }
     }
-
 
     private RuntimeIdentity leasedIdentity(RedissonClient client, KeySpace keys, String id) {
         var identity = new RuntimeIdentity(id);
         var leases = new RedisOwnerLeaseService(client, keys, new RedissonLockTemplate(client, keys));
-        var lease = leases.acquire("node:" + identity.instanceId(), identity.instanceId(), Duration.ofMinutes(5)).orElseThrow();
+        var lease =
+            leases.acquire("node:" + identity.instanceId(), identity.instanceId(), Duration.ofMinutes(5)).orElseThrow();
         identity.acquired(lease.token(), lease.fencingVersion(), () -> leases.isHeld(lease));
         return identity;
     }

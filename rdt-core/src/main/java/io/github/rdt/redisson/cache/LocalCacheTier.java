@@ -17,10 +17,7 @@ final class LocalCacheTier {
     LocalCacheTier(CachePolicy policy) {
         this.policy = policy;
         entries =
-                Caffeine.newBuilder()
-                        .maximumSize(policy.localMaximumSize())
-                        .expireAfterWrite(policy.localTtl())
-                        .build();
+            Caffeine.newBuilder().maximumSize(policy.localMaximumSize()).expireAfterWrite(policy.localTtl()).build();
     }
 
     long generation() {
@@ -36,15 +33,11 @@ final class LocalCacheTier {
         return null;
     }
 
-    void fillLocal(
-            String key, String json, long remainingMillis, long started, long observedGeneration) {
+    void fillLocal(String key, String json, long remainingMillis, long started, long observedGeneration) {
         if (remainingMillis <= 0) {
             return;
         }
-        long ttl =
-                Math.min(
-                        TimeUnit.MILLISECONDS.toNanos(remainingMillis),
-                        policy.localTtl().toNanos());
+        long ttl = Math.min(TimeUnit.MILLISECONDS.toNanos(remainingMillis), policy.localTtl().toNanos());
         entries.put(key, new Value(json, started + ttl));
         if (generation.get() != observedGeneration) {
             entries.invalidate(key);
@@ -60,5 +53,6 @@ final class LocalCacheTier {
         }
     }
 
-    private record Value(String json, long deadline) {}
+    private record Value(String json, long deadline) {
+    }
 }

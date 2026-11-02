@@ -5,6 +5,7 @@ import java.time.ZoneId;
 
 /**
  * ID 分配默认配置。
+ *
  * @param mode 分配模式
  * @param start 起始 ID，至少为一
  * @param allocationSize 每个号段的 ID 数量

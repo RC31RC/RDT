@@ -45,15 +45,15 @@ class QueueCapacityAndCleanupIT {
 
     static QueuePolicy policy(int count, long bytes) {
         return new QueuePolicy(3, Duration.ofMillis(10), Duration.ofSeconds(30), Duration.ofMillis(100),
-                Duration.ofSeconds(2), true, Duration.ofMinutes(1), Duration.ofDays(7), 10000,
-                1, Duration.ofSeconds(1), 4, 2, 8, 8, 4096, count, bytes, 32768);
+            Duration.ofSeconds(2), true, Duration.ofMinutes(1), Duration.ofDays(7), 10000, 1, Duration.ofSeconds(1), 4,
+            2, 8, 8, 4096, count, bytes, 32768);
     }
 
     @BeforeEach
     void connect() {
         var config = new Config().setThreads(2).setNettyThreads(2);
-        config.useSingleServer().setAddress(System.getProperty("rdt.it.redis"))
-                .setConnectionMinimumIdleSize(1).setConnectionPoolSize(8);
+        config.useSingleServer().setAddress(System.getProperty("rdt.it.redis")).setConnectionMinimumIdleSize(1)
+            .setConnectionPoolSize(8);
         client = Redisson.create(config);
     }
 
@@ -77,7 +77,8 @@ class QueueCapacityAndCleanupIT {
     void oneSweepReclaims1024AckedMessagesAndSkipsOldestPendingPrecisely() {
         var target = stream("events");
         target.createGroup(StreamCreateGroupArgs.name("g").id(StreamMessageId.ALL).makeStream());
-        for (int i = 0; i < 1024; i++) target.add(StreamAddArgs.entry("message", "payload"));
+        for (int i = 0; i < 1024; i++)
+            target.add(StreamAddArgs.entry("message", "payload"));
         var all = target.readGroup("g", "crashed", StreamReadGroupArgs.neverDelivered().count(1024));
         target.ack("g", all.keySet().toArray(StreamMessageId[]::new));
         var retention = new StreamRetention(policy(2048, 1048576), client, keys);
@@ -85,8 +86,10 @@ class QueueCapacityAndCleanupIT {
         retention.sweepAcknowledged();
         assertThat(target.size()).isZero();
 
-        for (int i = 0; i < 512; i++) target.add(StreamAddArgs.entry("message", "payload"));
-        var ids = new ArrayList<>(target.readGroup("g", "crashed", StreamReadGroupArgs.neverDelivered().count(512)).keySet());
+        for (int i = 0; i < 512; i++)
+            target.add(StreamAddArgs.entry("message", "payload"));
+        var ids =
+            new ArrayList<>(target.readGroup("g", "crashed", StreamReadGroupArgs.neverDelivered().count(512)).keySet());
         target.ack("g", ids.subList(1, ids.size()).toArray(StreamMessageId[]::new));
         retention.markAcknowledged(policy(2048, 1048576), target);
         retention.sweepAcknowledged();
@@ -97,7 +100,8 @@ class QueueCapacityAndCleanupIT {
     @Test
     void cleanupWithoutGroupsPreservesMessagesAndWaitsForSubscriptionAck() {
         var target = stream("events");
-        for (int i = 0; i < 3; i++) target.add(StreamAddArgs.entry("message", "payload"));
+        for (int i = 0; i < 3; i++)
+            target.add(StreamAddArgs.entry("message", "payload"));
         var retention = new StreamRetention(policy(10, 8192), client, keys);
 
         retention.markAcknowledged(policy(10, 8192), target);
@@ -123,12 +127,13 @@ class QueueCapacityAndCleanupIT {
         assertThatThrownBy(() -> admission.accept("events", encoded, null)).isInstanceOf(RdtQueueException.class);
         var target = stream("events");
         target.createGroup(StreamCreateGroupArgs.name("g").id(StreamMessageId.ALL));
-        var id = target.readGroup("g", "worker", StreamReadGroupArgs.neverDelivered().count(1)).keySet().iterator().next();
+        var id =
+            target.readGroup("g", "worker", StreamReadGroupArgs.neverDelivered().count(1)).keySet().iterator().next();
         var retention = new StreamRetention(policy, client, keys);
         retention.acknowledge(policy, target, "g", id.toString(), List.of(keys.key("message-retries", "events:g")));
         retention.sweepAcknowledged();
         assertThat(client.getAtomicLong(keys.key("queue-capacity", "events")).get())
-                .isEqualTo((encoded + " ").getBytes(StandardCharsets.UTF_8).length);
+            .isEqualTo((encoded + " ").getBytes(StandardCharsets.UTF_8).length);
         admission.accept("events", encoded, null);
         assertThat(target.size()).isEqualTo(1);
     }
@@ -142,15 +147,15 @@ class QueueCapacityAndCleanupIT {
         var target = stream("events");
         target.createGroup(StreamCreateGroupArgs.name("a").id(StreamMessageId.ALL));
         target.createGroup(StreamCreateGroupArgs.name("b").id(StreamMessageId.ALL));
-        var id = target.readGroup("a", "worker-a", StreamReadGroupArgs.neverDelivered().count(1))
-                .keySet().iterator().next();
+        var id =
+            target.readGroup("a", "worker-a", StreamReadGroupArgs.neverDelivered().count(1)).keySet().iterator().next();
         target.readGroup("b", "worker-b", StreamReadGroupArgs.neverDelivered().count(1));
         var retention = new StreamRetention(policy, client, keys);
 
         retention.acknowledge(policy, target, "a", id.toString(), List.of(keys.key("message-retries", "events:a")));
         assertThat(target.size()).isEqualTo(1);
         assertThat(client.getAtomicLong(keys.key("queue-capacity", "events")).get())
-                .isEqualTo(encoded.getBytes(StandardCharsets.UTF_8).length);
+            .isEqualTo(encoded.getBytes(StandardCharsets.UTF_8).length);
         retention.acknowledge(policy, target, "b", id.toString(), List.of(keys.key("message-retries", "events:b")));
         retention.sweepAcknowledged();
 
@@ -166,21 +171,22 @@ class QueueCapacityAndCleanupIT {
         String next = "next-envelope";
         admission.accept("events", first, null);
         admission.accept("events", removed, System.currentTimeMillis() + 60000);
-        client.<String>getScoredSortedSet(keys.key("message-delay", "events"), StringCodec.INSTANCE)
-                .remove(removed);
+        client.<String>getScoredSortedSet(keys.key("message-delay", "events"), StringCodec.INSTANCE).remove(removed);
 
         admission.accept("events", next, null);
 
         assertThat(client.getAtomicLong(keys.key("queue-capacity", "events")).get())
-                .isEqualTo(first.length() + next.length());
+            .isEqualTo(first.length() + next.length());
     }
 
     @Test
     void byteLimitAndMessageSizeRejectWithoutPartialWrites() {
         var admission = new QueueAdmission(client, keys, policy(100, 4096));
         admission.accept("events", "x".repeat(3000), null);
-        assertThatThrownBy(() -> admission.accept("events", "y".repeat(2000), null)).isInstanceOf(RdtQueueException.class);
-        assertThatThrownBy(() -> admission.accept("events", "z".repeat(4097), null)).isInstanceOf(RdtQueueException.class);
+        assertThatThrownBy(() -> admission.accept("events", "y".repeat(2000), null))
+            .isInstanceOf(RdtQueueException.class);
+        assertThatThrownBy(() -> admission.accept("events", "z".repeat(4097), null))
+            .isInstanceOf(RdtQueueException.class);
         assertThat(stream("events").size()).isEqualTo(1);
         assertThat(client.getAtomicLong(keys.key("queue-capacity", "events")).get()).isEqualTo(3000);
     }
@@ -190,10 +196,14 @@ class QueueCapacityAndCleanupIT {
         var admission = new QueueAdmission(client, keys, policy(32, 8192));
         var accepted = new AtomicInteger();
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            for (int i = 0; i < 128; i++) executor.submit(() -> {
-                try { admission.accept("events", "message", null); accepted.incrementAndGet(); }
-                catch (RdtQueueException full) { /* Expected admission rejection. */ }
-            });
+            for (int i = 0; i < 128; i++)
+                executor.submit(() -> {
+                    try {
+                        admission.accept("events", "message", null);
+                        accepted.incrementAndGet();
+                    } catch (RdtQueueException full) {
+                        /* Expected admission rejection. */ }
+                });
         }
         assertThat(accepted).hasValue(32);
         assertThat(stream("events").size()).isEqualTo(32);
@@ -203,26 +213,30 @@ class QueueCapacityAndCleanupIT {
     void successfulMessagesLeaveNoPerMessageDiagnosticsAndRecoveryDrainsContinuously() {
         var target = stream("events");
         target.createGroup(StreamCreateGroupArgs.name("g").id(StreamMessageId.ALL).makeStream());
-        for (int i = 0; i < 64; i++) target.add(StreamAddArgs.entry("message", json.write(Message.create("work", json))));
+        for (int i = 0; i < 64; i++)
+            target.add(StreamAddArgs.entry("message", json.write(Message.create("work", json))));
         var pending = target.readGroup("g", "crashed", StreamReadGroupArgs.neverDelivered().count(64));
         // Old Pending is immediately eligible with the default 30s visibility; no wall-clock sleep.
         client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, """
-                for i = 1, #ARGV do
-                  redis.call('XCLAIM', KEYS[1], 'g', 'crashed', 0, ARGV[i], 'IDLE', 60000, 'JUSTID')
-                end
-                return 1
-                """, RScript.ReturnType.LONG, List.of(target.getName()),
-                pending.keySet().stream().map(StreamMessageId::toString).toArray());
+            for i = 1, #ARGV do
+              redis.call('XCLAIM', KEYS[1], 'g', 'crashed', 0, ARGV[i], 'IDLE', 60000, 'JUSTID')
+            end
+            return 1
+            """, RScript.ReturnType.LONG, List.of(target.getName()),
+            pending.keySet().stream().map(StreamMessageId::toString).toArray());
         var handled = new AtomicInteger();
         try (var queue = new RedissonMessageQueueTemplate(client, keys, json, policy(1000, 1048576),
-                new RedissonLockTemplate(client, keys), failure -> { throw new AssertionError(failure); },
-                identity(), RetryClassifier.infrastructureFailures())) {
-            queue.subscribe(QueueSubscription.concurrent("events", QueueMode.STREAM, "g", 1), message -> handled.incrementAndGet());
+            new RedissonLockTemplate(client, keys), failure -> {
+                throw new AssertionError(failure);
+            }, identity(), RetryClassifier.infrastructureFailures())) {
+            queue.subscribe(QueueSubscription.concurrent("events", QueueMode.STREAM, "g", 1),
+                message -> handled.incrementAndGet());
             await().atMost(Duration.ofSeconds(8)).untilAsserted(() -> {
                 assertThat(handled).hasValue(64);
                 assertThat(target.size()).isZero();
             });
-            for (String feature : List.of("message-delivery", "message-failures", "message-retry-at", "message-first-failure"))
+            for (String feature : List.of("message-delivery", "message-failures", "message-retry-at",
+                "message-first-failure"))
                 assertThat(client.getKeys().getKeysByPattern(keys.pattern(feature))).isEmpty();
         }
     }
@@ -231,9 +245,11 @@ class QueueCapacityAndCleanupIT {
     void orderedConsumerDoesNotSleepAfterSuccessfulMessages() {
         var handled = new AtomicInteger();
         try (var queue = new RedissonMessageQueueTemplate(client, keys, json, policy(1000, 1048576),
-                new RedissonLockTemplate(client, keys), failure -> { throw new AssertionError(failure); },
-                identity(), RetryClassifier.infrastructureFailures())) {
-            for (int i = 0; i < 128; i++) queue.sendOrdered("ordered", "same-key", i, 1);
+            new RedissonLockTemplate(client, keys), failure -> {
+                throw new AssertionError(failure);
+            }, identity(), RetryClassifier.infrastructureFailures())) {
+            for (int i = 0; i < 128; i++)
+                queue.sendOrdered("ordered", "same-key", i, 1);
             queue.subscribe(QueueSubscription.ordered("ordered", "g", 1, 1), message -> handled.incrementAndGet());
             // The former mandatory 50ms per success alone required at least 6.4 seconds.
             await().atMost(Duration.ofSeconds(4)).untilAsserted(() -> assertThat(handled).hasValue(128));
@@ -245,9 +261,13 @@ class QueueCapacityAndCleanupIT {
         var policy = policy(1000, 1048576);
         var streams = new QueueStreams(client, keys);
         var retention = new StreamRetention(policy, client, keys);
-        var producer = new QueueProducer(client, keys, json, identity(), retention, streams, new AtomicBoolean(), policy);
-        for (int i = 0; i < 256; i++) producer.sendDelayed("events", i, Duration.ofMillis(1));
-        await().atMost(Duration.ofSeconds(1)).until(() -> client.<String>getScoredSortedSet(keys.key("message-delay", "events"), StringCodec.INSTANCE).lastScore() < System.currentTimeMillis());
+        var producer =
+            new QueueProducer(client, keys, json, identity(), retention, streams, new AtomicBoolean(), policy);
+        for (int i = 0; i < 256; i++)
+            producer.sendDelayed("events", i, Duration.ofMillis(1));
+        await().atMost(Duration.ofSeconds(1))
+            .until(() -> client.<String>getScoredSortedSet(keys.key("message-delay", "events"), StringCodec.INSTANCE)
+                .lastScore() < System.currentTimeMillis());
         try {
             producer.transferDelayed();
             assertThat(stream("events").size()).isEqualTo(256);

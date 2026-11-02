@@ -5,14 +5,17 @@ import io.github.rdt.queue.FailedMessage;
 /**
  * 对单个 RDT 命名空间执行受限管理操作。
  *
- * <p>命令只接受逻辑资源名，调用方不得传入 Redis 实际键。Stream 删除不能撤销，且不能
- * 中断已经开始的消费者业务回调；HTTP 边界应增加认证、权限、审计和二次确认。</p>
+ * <p>
+ * 命令只接受逻辑资源名，调用方不得传入 Redis 实际键。Stream 删除不能撤销，且不能 中断已经开始的消费者业务回调；HTTP 边界应增加认证、权限、审计和二次确认。
+ * </p>
  */
 public interface ManagementCommandService {
     /**
      * 请求已注册的本地调度任务尽快被业务实例执行。
      *
-     * <p>创建持久化 execution，由具备该 job 能力的业务实例执行。</p>
+     * <p>
+     * 创建持久化 execution，由具备该 job 能力的业务实例执行。
+     * </p>
      *
      * @param taskId 逻辑任务 ID
      * @return 已创建执行时为 {@code true}；任务不存在或存在活跃执行时为 {@code false}
@@ -23,7 +26,9 @@ public interface ManagementCommandService {
     boolean retireTask(String taskId);
 
     boolean pauseTask(String taskId, boolean paused);
+
     boolean drainInstance(String instanceId, boolean draining);
+
     boolean retryExecution(String taskId, String executionId);
 
     /** 删除一个任务已经保存的全部执行记录，不删除任务定义。 */

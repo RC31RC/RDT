@@ -27,8 +27,8 @@ import org.springframework.core.env.Environment;
 public class RdtRuntimeRegistry implements SmartLifecycle {
     private static final Logger log = LoggerFactory.getLogger(RdtRuntimeRegistry.class);
     private static final String RELEASE_IF_OWNER = "if redis.call('get', KEYS[1]) "
-            + "and string.sub(redis.call('get', KEYS[1]), 1, string.len(ARGV[1])) == ARGV[1] "
-            + "then return redis.call('del', KEYS[1]) else return 0 end";
+        + "and string.sub(redis.call('get', KEYS[1]), 1, string.len(ARGV[1])) == ARGV[1] "
+        + "then return redis.call('del', KEYS[1]) else return 0 end";
 
     private final RedissonClient client;
     private final KeySpace keys;
@@ -43,12 +43,11 @@ public class RdtRuntimeRegistry implements SmartLifecycle {
     private final RdtMetrics metrics;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicLong lastFailureLogNanos = new AtomicLong();
-    private final ScheduledExecutorService heartbeat = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().daemon().name("rdt-runtime-heartbeat").factory());
+    private final ScheduledExecutorService heartbeat = Executors
+        .newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("rdt-runtime-heartbeat").factory());
 
-    public RdtRuntimeRegistry(RedissonClient client, KeySpace keys, JsonCodec json,
-                              RdtProperties properties, RdtInstanceProperties instance,
-                              Environment environment, RuntimeIdentity identity, RdtMetrics metrics) {
+    public RdtRuntimeRegistry(RedissonClient client, KeySpace keys, JsonCodec json, RdtProperties properties,
+        RdtInstanceProperties instance, Environment environment, RuntimeIdentity identity, RdtMetrics metrics) {
         this.client = client;
         this.keys = keys;
         this.json = json;
@@ -56,7 +55,7 @@ public class RdtRuntimeRegistry implements SmartLifecycle {
         this.instance = instance;
         application = environment.getProperty("spring.application.name", "application");
         this.identity = identity;
-        this.metrics=metrics;
+        this.metrics = metrics;
         instanceId = identity.instanceId();
         runId = identity.runId();
     }
@@ -68,7 +67,7 @@ public class RdtRuntimeRegistry implements SmartLifecycle {
         }
         publish();
         heartbeat.scheduleWithFixedDelay(this::heartbeatSafely, instance.renewInterval().toMillis(),
-                instance.renewInterval().toMillis(), TimeUnit.MILLISECONDS);
+            instance.renewInterval().toMillis(), TimeUnit.MILLISECONDS);
     }
 
     private void heartbeatSafely() {
@@ -88,23 +87,27 @@ public class RdtRuntimeRegistry implements SmartLifecycle {
     }
 
     private void publish() {
-        if (identity.leaseToken().isBlank()) return;
+        if (identity.leaseToken().isBlank())
+            return;
         long now = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_ONLY,
-                "local t=redis.call('TIME'); return t[1]*1000+math.floor(t[2]/1000)",RScript.ReturnType.LONG,List.of());
-        String draining = client.<String>getBucket(keys.key("runtime-draining", instanceId), StringCodec.INSTANCE).get();
+            "local t=redis.call('TIME'); return t[1]*1000+math.floor(t[2]/1000)", RScript.ReturnType.LONG, List.of());
+        String draining =
+            client.<String>getBucket(keys.key("runtime-draining", instanceId), StringCodec.INSTANCE).get();
         identity.draining("true".equals(draining));
-        RuntimeInstance view = new RuntimeInstance(instanceId, runId, application, startedAtMillis, now, instance.lease().toMillis(), properties.queue().maxConcurrentHandlers(), properties.schedule().maxConcurrentTasks(), identity.generation(), identity.draining(), identity.components(), identity.pressure());
+        RuntimeInstance view =
+            new RuntimeInstance(instanceId, runId, application, startedAtMillis, now, instance.lease().toMillis(),
+                properties.queue().maxConcurrentHandlers(), properties.schedule().maxConcurrentTasks(),
+                identity.generation(), identity.draining(), identity.components(), identity.pressure());
         String value = identity.leaseToken() + "\n" + json.write(view);
         RBucket<String> target = bucket();
-        RedisSupport.redisRun("publish RDT runtime metadata", () -> client.getScript(StringCodec.INSTANCE).eval(
-                RScript.Mode.READ_WRITE,
+        RedisSupport.redisRun("publish RDT runtime metadata",
+            () -> client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE,
                 "if redis.call('get', KEYS[1]) == ARGV[1] then "
-                        + "return redis.call('psetex', KEYS[2], ARGV[2], ARGV[3]) end return nil",
-                RScript.ReturnType.VALUE,
-                List.of(keys.key("owner", "node:" + instanceId), target.getName()),
+                    + "return redis.call('psetex', KEYS[2], ARGV[2], ARGV[3]) end return nil",
+                RScript.ReturnType.VALUE, List.of(keys.key("owner", "node:" + instanceId), target.getName()),
                 identity.leaseToken(), instance.lease().toMillis(), value));
         client.<String>getScoredSortedSet(keys.key("runtime-index", "instances"), StringCodec.INSTANCE)
-                .add(now + instance.lease().toMillis(), instanceId + ":" + runId);
+            .add(now + instance.lease().toMillis(), instanceId + ":" + runId);
     }
 
     private RBucket<String> bucket() {
@@ -117,9 +120,10 @@ public class RdtRuntimeRegistry implements SmartLifecycle {
             return;
         }
         heartbeat.shutdownNow();
-        RedisSupport.redisRun("release RDT runtime metadata", () -> client.getScript(StringCodec.INSTANCE).eval(
-                RScript.Mode.READ_WRITE, RELEASE_IF_OWNER, RScript.ReturnType.LONG,
-                List.of(keys.key("runtime-instance", instanceId + ":" + runId)), identity.leaseToken() + "\n"));
+        RedisSupport.redisRun("release RDT runtime metadata",
+            () -> client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, RELEASE_IF_OWNER,
+                RScript.ReturnType.LONG, List.of(keys.key("runtime-instance", instanceId + ":" + runId)),
+                identity.leaseToken() + "\n"));
     }
 
     @Override

@@ -16,25 +16,30 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("${rdt.console.api-path:/rdt/management}/users")
 public final class RdtConsoleUsersController {
     private final ConsoleSecurityService security;
-    public RdtConsoleUsersController(ConsoleSecurityService security) { this.security = security; }
+
+    public RdtConsoleUsersController(ConsoleSecurityService security) {
+        this.security = security;
+    }
 
     @GetMapping
-    public List<ConsoleSecurityService.UserView> users() { return security.users(); }
+    public List<ConsoleSecurityService.UserView> users() {
+        return security.users();
+    }
 
     @PostMapping
-    public ConsoleSecurityService.UserView create(
-            @RequestBody
-            ConsoleSecurityService.Create command) { return security.create(command); }
+    public ConsoleSecurityService.UserView create(@RequestBody ConsoleSecurityService.Create command) {
+        return security.create(command);
+    }
 
     @PutMapping("/{username}")
-    public ConsoleSecurityService.UserView update(
-            @PathVariable
-            String username,
-            @RequestBody
-            ConsoleSecurityService.Update command) { return security.update(username, command); }
+    public ConsoleSecurityService.UserView update(@PathVariable String username,
+        @RequestBody ConsoleSecurityService.Update command) {
+        return security.update(username, command);
+    }
 
     @DeleteMapping("/{username}")
-    public ResponseEntity<Void> delete(
-            @PathVariable
-            String username) { security.delete(username); return ResponseEntity.noContent().build(); }
+    public ResponseEntity<Void> delete(@PathVariable String username) {
+        security.delete(username);
+        return ResponseEntity.noContent().build();
+    }
 }

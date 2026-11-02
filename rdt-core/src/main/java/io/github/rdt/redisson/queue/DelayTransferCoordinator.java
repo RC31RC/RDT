@@ -27,32 +27,36 @@ final class DelayTransferCoordinator implements AutoCloseable {
     }
 
     synchronized boolean isLeader() {
-        if (closed) return false;
+        if (closed)
+            return false;
         long now = System.nanoTime();
-        if (now < nextCheck) return leader;
+        if (now < nextCheck)
+            return leader;
         // Failure also backs off. Cached permission never survives a long local pause.
         nextCheck = now + CHECK_NANOS;
         leader = false;
         Number result = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, """
-                if redis.call('GET', KEYS[1]) == ARGV[1] then
-                  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
-                end
-                if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then return 1 end
-                return 0
-                """, RScript.ReturnType.LONG, List.of(key), token, LEASE_MILLIS);
+            if redis.call('GET', KEYS[1]) == ARGV[1] then
+              return redis.call('PEXPIRE', KEYS[1], ARGV[2])
+            end
+            if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then return 1 end
+            return 0
+            """, RScript.ReturnType.LONG, List.of(key), token, LEASE_MILLIS);
         leader = result.longValue() == 1;
         return leader;
     }
 
     @Override
     public synchronized void close() {
-        if (closed) return;
+        if (closed)
+            return;
         closed = true;
-        if (!leader) return;
+        if (!leader)
+            return;
         leader = false;
         client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, """
-                if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
-                return 0
-                """, RScript.ReturnType.LONG, List.of(key), token);
+            if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+            return 0
+            """, RScript.ReturnType.LONG, List.of(key), token);
     }
 }

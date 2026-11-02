@@ -7,7 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class RdtConsoleApplication {
     /** 创建应用配置。 */
-    public RdtConsoleApplication() { }
+    public RdtConsoleApplication() {}
 
     /**
      * 启动独立控制台。

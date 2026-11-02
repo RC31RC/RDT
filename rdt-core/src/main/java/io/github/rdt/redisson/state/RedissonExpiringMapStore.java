@@ -28,15 +28,15 @@ public final class RedissonExpiringMapStore implements ExpiringMapStore {
 
     @Override
     public <T> Optional<T> get(String map, String field, Type type) {
-        String encoded = RedisSupport.redis("read expiring map field", () ->
-                client.<String, String>getMapCache(keys.key("map-cache", map), StringCodec.INSTANCE).get(field));
+        String encoded = RedisSupport.redis("read expiring map field",
+            () -> client.<String, String>getMapCache(keys.key("map-cache", map), StringCodec.INSTANCE).get(field));
         return Optional.ofNullable(encoded).map(value -> json.read(value, type));
     }
 
     @Override
     public <T> Map<String, T> getAll(String map, Type type) {
-        Map<String, String> encoded = RedisSupport.redis("read expiring map", () ->
-                client.<String, String>getMapCache(keys.key("map-cache", map), StringCodec.INSTANCE).readAllMap());
+        Map<String, String> encoded = RedisSupport.redis("read expiring map",
+            () -> client.<String, String>getMapCache(keys.key("map-cache", map), StringCodec.INSTANCE).readAllMap());
         Map<String, T> values = new LinkedHashMap<>();
         encoded.forEach((field, value) -> values.put(field, json.read(value, type)));
         return Map.copyOf(values);
@@ -46,14 +46,14 @@ public final class RedissonExpiringMapStore implements ExpiringMapStore {
     public void put(String map, String field, Object value, Duration ttl) {
         RdtSupport.require(value != null, "Expiring map value must not be null");
         RdtSupport.positive(ttl, "field ttl");
-        RedisSupport.redisRun("write expiring map field", () ->
-                client.<String, String>getMapCache(keys.key("map-cache", map), StringCodec.INSTANCE)
-                        .fastPut(field, json.write(value), ttl.toMillis(), TimeUnit.MILLISECONDS));
+        RedisSupport.redisRun("write expiring map field",
+            () -> client.<String, String>getMapCache(keys.key("map-cache", map), StringCodec.INSTANCE).fastPut(field,
+                json.write(value), ttl.toMillis(), TimeUnit.MILLISECONDS));
     }
 
     @Override
     public void remove(String map, String field) {
-        RedisSupport.redisRun("remove expiring map field", () ->
-                client.<String, String>getMapCache(keys.key("map-cache", map), StringCodec.INSTANCE).fastRemove(field));
+        RedisSupport.redisRun("remove expiring map field", () -> client
+            .<String, String>getMapCache(keys.key("map-cache", map), StringCodec.INSTANCE).fastRemove(field));
     }
 }

@@ -6,53 +6,29 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 @ConfigurationProperties("rdt.consistency")
-public record RdtConsistencyProperties(
-        @DefaultValue("false")
-        boolean enabled,
-        @DefaultValue("false")
-        boolean jdbcDeadLetters,
-        @DefaultValue("false")
-        boolean inboxEnabled,
-        @DefaultValue("500ms")
-        Duration relayInterval,
-        @DefaultValue("16")
-        int batchSize,
-        @DefaultValue("60s")
-        Duration claimLease,
-        @DefaultValue("10")
-        int maxAttempts,
-        @DefaultValue("1s")
-        Duration retryDelay,
-        @DefaultValue("1h")
-        Duration maxRetryDelay,
-        @DefaultValue("7d")
-        Duration retention,
-        @DefaultValue("1m")
-        Duration cleanupInterval,
-        @DefaultValue("1s")
-        Duration cleanupBacklogDelay,
-        @DefaultValue("5s")
-        Duration cleanupJitter,
-        @DefaultValue("1000")
-        int cleanupBatchSize,
-        @DefaultValue("10000")
-        int cleanupLimit,
-        @DefaultValue("100ms")
-        Duration cleanupPause,
-        @DefaultValue("")
-        String schema) {
+public record RdtConsistencyProperties(@DefaultValue("false") boolean enabled,
+    @DefaultValue("false") boolean jdbcDeadLetters, @DefaultValue("false") boolean inboxEnabled,
+    @DefaultValue("500ms") Duration relayInterval, @DefaultValue("16") int batchSize,
+    @DefaultValue("60s") Duration claimLease, @DefaultValue("10") int maxAttempts,
+    @DefaultValue("1s") Duration retryDelay, @DefaultValue("1h") Duration maxRetryDelay,
+    @DefaultValue("7d") Duration retention, @DefaultValue("1m") Duration cleanupInterval,
+    @DefaultValue("1s") Duration cleanupBacklogDelay, @DefaultValue("5s") Duration cleanupJitter,
+    @DefaultValue("1000") int cleanupBatchSize, @DefaultValue("10000") int cleanupLimit,
+    @DefaultValue("100ms") Duration cleanupPause, @DefaultValue("") String schema) {
     public RdtConsistencyProperties {
         RdtSupport.positive(relayInterval, "relay interval");
         RdtSupport.positive(claimLease, "claim lease");
         RdtSupport.positive(retention, "consistency retention");
         RdtSupport.positive(cleanupInterval, "cleanup interval");
         RdtSupport.positive(cleanupBacklogDelay, "cleanup backlog delay");
-        RdtSupport.require(cleanupBacklogDelay.compareTo(cleanupInterval) <= 0, "Cleanup backlog delay exceeds interval");
+        RdtSupport.require(cleanupBacklogDelay.compareTo(cleanupInterval) <= 0,
+            "Cleanup backlog delay exceeds interval");
         RdtSupport.positive(retryDelay, "outbox retry delay");
         RdtSupport.require(maxRetryDelay.compareTo(retryDelay) >= 0 && maxAttempts > 0, "Invalid outbox retry policy");
-        RdtSupport.require(batchSize > 0 && batchSize <= 500 && cleanupBatchSize > 0 && cleanupBatchSize <= 1000 && cleanupLimit >= cleanupBatchSize,
-                "Invalid consistency batch limits");
+        RdtSupport.require(batchSize > 0 && batchSize <= 500 && cleanupBatchSize > 0 && cleanupBatchSize <= 1000
+            && cleanupLimit >= cleanupBatchSize, "Invalid consistency batch limits");
         RdtSupport.require(!cleanupJitter.isNegative() && !cleanupPause.isNegative(), "Invalid cleanup timing");
-        RdtSupport.require(schema.isEmpty() || schema.matches("[A-Za-z_][A-Za-z0-9_]*"), "Invalid SQL schema identifier");
+        RdtSupport.require(schema.isEmpty() || schema.matches("[A-Za-z_][A-Za-z0-9_]*"),
+            "Invalid SQL schema identifier");
     }
 }

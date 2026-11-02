@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 @Target(ElementType.TYPE)
 public @interface RdtScheduled {
     String id();
+
     JobRoute route() default JobRoute.HEALTH_FIRST;
+
     ScheduleFailureMode failureMode() default ScheduleFailureMode.CONTINUE;
 }

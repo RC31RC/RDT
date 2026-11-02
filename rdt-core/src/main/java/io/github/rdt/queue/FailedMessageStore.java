@@ -7,6 +7,7 @@ import java.time.Duration;
 public interface FailedMessageStore {
     /**
      * 按目的地、消费组和消息 ID 幂等保存。
+     *
      * @param failure 已耗尽重试次数的消息投递记录
      */
     void save(FailedMessage failure);

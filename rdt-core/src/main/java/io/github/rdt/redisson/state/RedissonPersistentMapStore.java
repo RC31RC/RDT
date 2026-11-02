@@ -24,8 +24,8 @@ public final class RedissonPersistentMapStore implements PersistentMapStore {
 
     @Override
     public <T> Map<String, T> get(String map, Type type) {
-        Map<String, String> encoded = RedisSupport.redis("read persistent map", () ->
-                client.<String, String>getMap(keys.key("map", map), StringCodec.INSTANCE).readAllMap());
+        Map<String, String> encoded = RedisSupport.redis("read persistent map",
+            () -> client.<String, String>getMap(keys.key("map", map), StringCodec.INSTANCE).readAllMap());
         Map<String, T> values = new LinkedHashMap<>();
         encoded.forEach((field, value) -> values.put(field, json.read(value, type)));
         return Map.copyOf(values);
@@ -35,7 +35,7 @@ public final class RedissonPersistentMapStore implements PersistentMapStore {
     public void putAll(String map, Map<String, ?> values) {
         Map<String, String> encoded = new LinkedHashMap<>();
         values.forEach((field, value) -> encoded.put(field, json.write(value)));
-        RedisSupport.redisRun("write persistent map", () ->
-                client.<String, String>getMap(keys.key("map", map), StringCodec.INSTANCE).putAll(encoded));
+        RedisSupport.redisRun("write persistent map",
+            () -> client.<String, String>getMap(keys.key("map", map), StringCodec.INSTANCE).putAll(encoded));
     }
 }

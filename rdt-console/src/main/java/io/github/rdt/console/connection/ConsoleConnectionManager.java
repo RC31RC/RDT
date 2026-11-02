@@ -17,7 +17,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 /** A read lease covers the entire query/command/archive, not just obtaining its client. */
 public class ConsoleConnectionManager implements AutoCloseable {
-    public enum Role { RUNTIME, CACHE }
+    public enum Role {
+        RUNTIME, CACHE
+    }
+
     private final ConsoleConnectionStore store;
     private final ConsoleRedisClientFactory factory;
     private final Semaphore probes = new Semaphore(1);
@@ -35,11 +38,17 @@ public class ConsoleConnectionManager implements AutoCloseable {
         cache = session(settings.cache());
     }
 
-    public long revision() { return revision; }
+    public long revision() {
+        return revision;
+    }
 
     public boolean runtimeConfigured() {
         lock.readLock().lock();
-        try { return runtime != null; } finally { lock.readLock().unlock(); }
+        try {
+            return runtime != null;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public <T> T withManagement(Function<RdtNamespaceManagementService, T> action) {
@@ -47,24 +56,31 @@ public class ConsoleConnectionManager implements AutoCloseable {
     }
 
     public <T> T withCommandManagement(long expectedRevision, Function<RdtNamespaceManagementService, T> action) {
-        return useRuntime(expectedRevision, (client, namespaces) ->
-                action.apply(new RdtNamespaceManagementService(client, namespaces)));
+        return useRuntime(expectedRevision,
+            (client, namespaces) -> action.apply(new RdtNamespaceManagementService(client, namespaces)));
     }
 
     public <T> T withCacheCommandManagement(long expectedRevision, Role role,
-                                                  Function<RdtNamespaceManagementService, T> action) {
+        Function<RdtNamespaceManagementService, T> action) {
         Session selected;
         List<String> namespaces;
         lock.readLock().lock();
         try {
-            if (expectedRevision != revision) throw new ResponseStatusException(HttpStatus.CONFLICT, "Redis target changed; reload settings");
+            if (expectedRevision != revision)
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Redis target changed; reload settings");
             selected = role == Role.CACHE ? cache : runtime;
-            if (selected == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected Redis role is not configured");
+            if (selected == null)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected Redis role is not configured");
             selected.retain();
             namespaces = settings.managedNamespaces();
-        } finally { lock.readLock().unlock(); }
-        try { return action.apply(new RdtNamespaceManagementService(selected.client(), namespaces)); }
-        finally { selected.release(); }
+        } finally {
+            lock.readLock().unlock();
+        }
+        try {
+            return action.apply(new RdtNamespaceManagementService(selected.client(), namespaces));
+        } finally {
+            selected.release();
+        }
     }
 
     public <T> T withRuntime(BiFunction<RedissonClient, List<String>, T> action) {
@@ -77,22 +93,32 @@ public class ConsoleConnectionManager implements AutoCloseable {
         lock.readLock().lock();
         try {
             if (expectedRevision != null && expectedRevision != revision) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Redis target changed; reload connection settings before issuing commands");
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Redis target changed; reload connection settings before issuing commands");
             }
-            if (runtime == null) throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION,
+            if (runtime == null)
+                throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION,
                     "Runtime Redis is not configured; open Console connection settings after login");
             selected = runtime;
             selected.retain();
             namespaces = settings.managedNamespaces();
-        } finally { lock.readLock().unlock(); }
-        try { return action.apply(selected.client(), namespaces); }
-        finally { selected.release(); }
+        } finally {
+            lock.readLock().unlock();
+        }
+        try {
+            return action.apply(selected.client(), namespaces);
+        } finally {
+            selected.release();
+        }
     }
 
     public SettingsView view() {
         lock.readLock().lock();
-        try { return new SettingsView(revision, view(runtime), view(cache), settings.managedNamespaces()); }
-        finally { lock.readLock().unlock(); }
+        try {
+            return new SettingsView(revision, view(runtime), view(cache), settings.managedNamespaces());
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public SettingsView save(Update update) {
@@ -100,9 +126,11 @@ public class ConsoleConnectionManager implements AutoCloseable {
         Session oldCache;
         lock.writeLock().lock();
         try {
-            if (update.revision() != revision) throw new ResponseStatusException(HttpStatus.CONFLICT,
+            if (update.revision() != revision)
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Connection settings changed; reload before saving");
-            ConsoleConnections next = new ConsoleConnections(update.runtime(), update.cache(), update.managedNamespaces())
+            ConsoleConnections next =
+                new ConsoleConnections(update.runtime(), update.cache(), update.managedNamespaces())
                     .withSavedPasswords(settings);
             // Persist first. A failed disk write must leave the active settings/clients untouched.
             store.save(next);
@@ -112,7 +140,9 @@ public class ConsoleConnectionManager implements AutoCloseable {
             runtime = session(next.runtime());
             cache = session(next.cache());
             revision++;
-        } finally { lock.writeLock().unlock(); }
+        } finally {
+            lock.writeLock().unlock();
+        }
         retire(oldRuntime);
         retire(oldCache);
         return view();
@@ -123,10 +153,14 @@ public class ConsoleConnectionManager implements AutoCloseable {
         lock.readLock().lock();
         try {
             var saved = role == Role.RUNTIME ? settings.runtime() : settings.cache();
-            if (submitted == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide a Redis connection");
+            if (submitted == null)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide a Redis connection");
             resolved = submitted.withSavedPasswords(saved);
-        } finally { lock.readLock().unlock(); }
-        if (!probes.tryAcquire()) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+        } finally {
+            lock.readLock().unlock();
+        }
+        if (!probes.tryAcquire())
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                 "Another Redis connection test is already running");
         RedissonClient probe = null;
         try {
@@ -136,11 +170,16 @@ public class ConsoleConnectionManager implements AutoCloseable {
                 case CLUSTER -> probe.getRedisNodes(RedisNodes.CLUSTER).pingAll();
                 case SENTINEL -> probe.getRedisNodes(RedisNodes.SENTINEL_MASTER_SLAVE).pingAll();
             };
-            if (!reachable) throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION,
+            if (!reachable)
+                throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION,
                     "Not all configured Redis nodes responded to PING");
         } finally {
-            try { if (probe != null) probe.shutdown(0, 2, TimeUnit.SECONDS); }
-            finally { probes.release(); }
+            try {
+                if (probe != null)
+                    probe.shutdown(0, 2, TimeUnit.SECONDS);
+            } finally {
+                probes.release();
+            }
         }
     }
 
@@ -149,21 +188,34 @@ public class ConsoleConnectionManager implements AutoCloseable {
         Session oldRuntime;
         Session oldCache;
         lock.writeLock().lock();
-        try { oldRuntime = runtime; oldCache = cache; runtime = null; cache = null; }
-        finally { lock.writeLock().unlock(); }
+        try {
+            oldRuntime = runtime;
+            oldCache = cache;
+            runtime = null;
+            cache = null;
+        } finally {
+            lock.writeLock().unlock();
+        }
         retire(oldRuntime);
         retire(oldCache);
     }
 
-    private Session session(RedisConnectionProfile profile) { return profile == null ? null : new Session(profile); }
-    private static void retire(Session session) { if (session != null) session.retire(); }
+    private Session session(RedisConnectionProfile profile) {
+        return profile == null ? null : new Session(profile);
+    }
+
+    private static void retire(Session session) {
+        if (session != null)
+            session.retire();
+    }
 
     private static ProfileView view(Session session) {
-        if (session == null) return null;
+        if (session == null)
+            return null;
         RedisConnectionProfile p = session.profile;
         return new ProfileView(p.topology(), p.addresses(), p.database(), p.masterName(), p.username(),
-                p.password() != null && !p.password().isEmpty(), p.sentinelUsername(),
-                p.sentinelPassword() != null && !p.sentinelPassword().isEmpty(), session.client != null);
+            p.password() != null && !p.password().isEmpty(), p.sentinelUsername(),
+            p.sentinelPassword() != null && !p.sentinelPassword().isEmpty(), session.client != null);
     }
 
     private final class Session {
@@ -171,24 +223,40 @@ public class ConsoleConnectionManager implements AutoCloseable {
         private volatile RedissonClient client;
         private int leases;
         private boolean retired;
-        private Session(RedisConnectionProfile profile) { this.profile = profile; }
-        private synchronized void retain() { leases++; }
+
+        private Session(RedisConnectionProfile profile) {
+            this.profile = profile;
+        }
+
+        private synchronized void retain() {
+            leases++;
+        }
+
         private synchronized RedissonClient client() {
-            if (client == null) client = factory.create(profile);
+            if (client == null)
+                client = factory.create(profile);
             return client;
         }
+
         private void release() {
-            synchronized (this) { leases--; }
+            synchronized (this) {
+                leases--;
+            }
             closeIfUnused();
         }
+
         private void retire() {
-            synchronized (this) { retired = true; }
+            synchronized (this) {
+                retired = true;
+            }
             closeIfUnused();
         }
+
         private void closeIfUnused() {
             RedissonClient unused;
             synchronized (this) {
-                if (!retired || leases != 0 || client == null) return;
+                if (!retired || leases != 0 || client == null)
+                    return;
                 unused = client;
                 client = null;
             }
@@ -197,9 +265,14 @@ public class ConsoleConnectionManager implements AutoCloseable {
     }
 
     public record Update(long revision, RedisConnectionProfile runtime, RedisConnectionProfile cache,
-                         List<String> managedNamespaces) { }
-    public record SettingsView(long revision, ProfileView runtime, ProfileView cache, List<String> managedNamespaces) { }
+        List<String> managedNamespaces) {
+    }
+
+    public record SettingsView(long revision, ProfileView runtime, ProfileView cache, List<String> managedNamespaces) {
+    }
+
     public record ProfileView(RedisConnectionProfile.Topology topology, List<String> addresses, int database,
-                              String masterName, String username, boolean passwordSet, String sentinelUsername,
-                              boolean sentinelPasswordSet, boolean clientActive) { }
+        String masterName, String username, boolean passwordSet, String sentinelUsername, boolean sentinelPasswordSet,
+        boolean clientActive) {
+    }
 }

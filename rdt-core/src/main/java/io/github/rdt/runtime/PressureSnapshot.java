@@ -3,8 +3,8 @@ package io.github.rdt.runtime;
 import java.util.List;
 
 /** Cached local admission decision; negative readings mean a sensor is unavailable. */
-public record PressureSnapshot(boolean paused, double cpuLoad, double databaseUsage,
-                               long sampledAtMillis, List<String> reasons) {
+public record PressureSnapshot(boolean paused, double cpuLoad, double databaseUsage, long sampledAtMillis,
+    List<String> reasons) {
     public PressureSnapshot {
         reasons = List.copyOf(reasons);
     }

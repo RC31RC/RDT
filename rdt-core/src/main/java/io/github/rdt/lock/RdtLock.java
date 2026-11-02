@@ -8,10 +8,11 @@ import java.lang.annotation.Target;
 /**
  * 为 Spring Bean 的公开同步方法开启锁作用域，不拦截同类内部自调用。
  *
- * <p>该注解只描述方法的锁生命周期，不描述具体资源。业务代码通过
- * {@link DistributedLockManager} 显式追加需要保护的资源锁。</p>
+ * <p>
+ * 该注解只描述方法的锁生命周期，不描述具体资源。业务代码通过 {@link DistributedLockManager} 显式追加需要保护的资源锁。默认 Spring 管理器仅在
+ * 首次实际获取时已有活跃事务时延迟释放；否则在方法退出时释放。
+ * </p>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
-public @interface RdtLock {
-}
+public @interface RdtLock {}

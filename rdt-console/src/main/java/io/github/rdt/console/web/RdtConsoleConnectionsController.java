@@ -18,22 +18,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("${rdt.console.api-path:/rdt/management}/connections")
 public class RdtConsoleConnectionsController {
     private final ConsoleConnectionManager connections;
-    public RdtConsoleConnectionsController(ConsoleConnectionManager connections) { this.connections = connections; }
+
+    public RdtConsoleConnectionsController(ConsoleConnectionManager connections) {
+        this.connections = connections;
+    }
 
     @GetMapping
-    public SettingsView settings() { return connections.view(); }
+    public SettingsView settings() {
+        return connections.view();
+    }
 
     @PutMapping
-    public SettingsView save(
-            @RequestBody
-            Update update) { return connections.save(update); }
+    public SettingsView save(@RequestBody Update update) {
+        return connections.save(update);
+    }
 
     @PostMapping("/test/{role}")
-    public Map<String, Boolean> test(
-            @PathVariable
-            ConsoleConnectionManager.Role role,
-            @RequestBody
-            RedisConnectionProfile profile) {
+    public Map<String, Boolean> test(@PathVariable ConsoleConnectionManager.Role role,
+        @RequestBody RedisConnectionProfile profile) {
         connections.test(role, profile);
         return Map.of("reachable", true);
     }

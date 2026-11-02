@@ -21,19 +21,23 @@ import javax.crypto.spec.SecretKeySpec;
 
 /** Local administrative secrets: encrypted at rest, private files, durable atomic replacement. */
 public class ConsoleConnectionStore {
-    private static final byte[] MAGIC = { 'R', 'D', 'T', 1 };
+    private static final byte[] MAGIC = {'R', 'D', 'T', 1};
     private final Path directory;
     private final JsonCodec json = new JsonCodec();
     private final SecureRandom random = new SecureRandom();
 
-    public ConsoleConnectionStore(Path directory) { this.directory = directory; }
+    public ConsoleConnectionStore(Path directory) {
+        this.directory = directory;
+    }
 
     public ConsoleConnections load() {
         Path file = directory.resolve("connections.enc");
-        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) return ConsoleConnections.empty();
+        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS))
+            return ConsoleConnections.empty();
         try {
             rejectSymlink(file);
-            if (Files.size(file) > 1024 * 1024) throw new IOException("Settings file exceeds 1 MiB");
+            if (Files.size(file) > 1024 * 1024)
+                throw new IOException("Settings file exceeds 1 MiB");
             byte[] raw = Files.readAllBytes(file);
             if (raw.length < 32 || !Arrays.equals(Arrays.copyOfRange(raw, 0, 4), MAGIC)) {
                 throw new IOException("Unsupported settings file format");
@@ -44,7 +48,8 @@ public class ConsoleConnectionStore {
             String plain = new String(cipher.doFinal(raw, 16, raw.length - 16), StandardCharsets.UTF_8);
             return json.read(plain, ConsoleConnections.class);
         } catch (IOException | GeneralSecurityException failure) {
-            throw new RdtConfigurationException("Cannot read Console connections; check connections.enc and connections.key", failure);
+            throw new RdtConfigurationException(
+                "Cannot read Console connections; check connections.enc and connections.key", failure);
         }
     }
 
@@ -61,7 +66,8 @@ public class ConsoleConnectionStore {
             payload.flip();
             atomicWrite(directory.resolve("connections.enc"), payload);
         } catch (IOException | GeneralSecurityException failure) {
-            throw new RdtConfigurationException("Cannot persist Console connections; check the private settings directory", failure);
+            throw new RdtConfigurationException(
+                "Cannot persist Console connections; check the private settings directory", failure);
         }
     }
 
@@ -72,13 +78,15 @@ public class ConsoleConnectionStore {
             byte[] raw = new byte[32];
             random.nextBytes(raw);
             // CREATE_NEW never replaces an existing key, including one created by another process.
-            try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+            try (
+                FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
                 privateFile(file);
                 writeFully(channel, ByteBuffer.wrap(raw));
             }
         }
         byte[] raw = Files.readAllBytes(file);
-        if (raw.length != 32) throw new IOException("Invalid local encryption key");
+        if (raw.length != 32)
+            throw new IOException("Invalid local encryption key");
         return new SecretKeySpec(raw, "AES");
     }
 
@@ -111,11 +119,13 @@ public class ConsoleConnectionStore {
     }
 
     private static void writeFully(FileChannel channel, ByteBuffer bytes) throws IOException {
-        while (bytes.hasRemaining()) channel.write(bytes);
+        while (bytes.hasRemaining())
+            channel.write(bytes);
         channel.force(true);
     }
 
     private static void rejectSymlink(Path path) throws IOException {
-        if (Files.isSymbolicLink(path)) throw new IOException("Settings paths must not be symbolic links");
+        if (Files.isSymbolicLink(path))
+            throw new IOException("Settings paths must not be symbolic links");
     }
 }

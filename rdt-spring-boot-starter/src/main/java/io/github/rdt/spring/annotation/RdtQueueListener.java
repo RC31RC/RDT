@@ -12,5 +12,6 @@ import org.springframework.stereotype.Component;
 @Target(ElementType.TYPE)
 public @interface RdtQueueListener {
     String topic();
+
     String group();
 }

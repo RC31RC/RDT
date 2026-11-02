@@ -29,6 +29,7 @@ import io.github.rdt.lock.LockType;
 import io.github.rdt.redisson.lock.RedissonLockTemplate;
 import io.github.rdt.lock.DefaultLockManager;
 import io.github.rdt.lock.LockScope;
+import io.github.rdt.lock.LockKey;
 import io.github.rdt.redisson.management.RedissonManagementCommandService;
 import io.github.rdt.redisson.management.RedissonManagementQueryService;
 import io.github.rdt.redisson.management.ManagementIndex;
@@ -119,19 +120,20 @@ class DistributedPrimitivesIT {
                 int source = i;
                 results.add(executor.submit(() -> {
                     start.await();
-                    return (source % 2 == 0 ? first : second).observe(
-                            "concurrent-command", "source-" + source, "event-" + source, policy);
+                    return (source % 2 == 0 ? first : second).observe("concurrent-command", "source-" + source,
+                        "event-" + source, policy);
                 }));
             }
             start.countDown();
             Set<String> rounds = new HashSet<>();
-            for (var result : results) rounds.add(result.get(5, TimeUnit.SECONDS));
+            for (var result : results)
+                rounds.add(result.get(5, TimeUnit.SECONDS));
             assertThat(rounds).hasSize(1);
         }
         first.observe("capacity-command", "source", "one", policy);
         first.observe("capacity-command", "source", "two", policy);
         assertThatThrownBy(() -> second.observe("capacity-command", "source", "three", policy))
-                .isInstanceOf(RdtException.class);
+            .isInstanceOf(RdtException.class);
     }
 
     @Test
@@ -139,15 +141,14 @@ class DistributedPrimitivesIT {
         var keys = new KeySpace("cache-clearing-it:" + UUID.randomUUID());
         var locksA = new RedissonLockTemplate(a, keys);
         var locksB = new RedissonLockTemplate(b, keys);
-        var cachePolicy = new CachePolicy(Duration.ofMinutes(5), Duration.ofSeconds(1), 0,
-                true, Duration.ofMinutes(1), 32);
+        var cachePolicy =
+            new CachePolicy(Duration.ofMinutes(5), Duration.ofSeconds(1), 0, true, Duration.ofMinutes(1), 32);
         var foreignKeys = new KeySpace(keys.namespace() + "-other");
         var states = new RedissonSharedStateStore(a, keys, json);
         var commands = new RedissonManagementCommandService(a, keys, locksA, json);
         try (var root = new RedissonCacheService(a, keys, json, cachePolicy, locksA);
-             var remote = new RedissonCacheService(b, keys, json, cachePolicy, locksB);
-             var foreign = new RedissonCacheService(a, foreignKeys, json, cachePolicy,
-                     new RedissonLockTemplate(a, foreignKeys))) {
+            var remote = new RedissonCacheService(b, keys, json, cachePolicy, locksB); var foreign =
+                new RedissonCacheService(a, foreignKeys, json, cachePolicy, new RedissonLockTemplate(a, foreignKeys))) {
             var region = root.region("prices", cachePolicy);
             var remoteRegion = remote.region("prices", cachePolicy);
             root.put("root", "root-value", Duration.ofMinutes(5));
@@ -190,9 +191,8 @@ class DistributedPrimitivesIT {
         Config config = new Config();
         config.setNettyThreads(2).setThreads(2).setLockWatchdogTimeout(1200);
         config.setPassword(System.getenv("REDIS_PASSWORD"));
-        config.useSingleServer().setAddress(System.getProperty("rdt.it.redis"))
-                .setConnectionMinimumIdleSize(1).setConnectionPoolSize(8)
-                .setSubscriptionConnectionMinimumIdleSize(1).setSubscriptionConnectionPoolSize(4);
+        config.useSingleServer().setAddress(System.getProperty("rdt.it.redis")).setConnectionMinimumIdleSize(1)
+            .setConnectionPoolSize(8).setSubscriptionConnectionMinimumIdleSize(1).setSubscriptionConnectionPoolSize(4);
         return Redisson.create(config);
     }
 
@@ -214,8 +214,8 @@ class DistributedPrimitivesIT {
 
     private RedissonCacheService cache(RedissonClient client, boolean local) {
         return new RedissonCacheService(client, keys, json,
-                new CachePolicy(Duration.ofSeconds(20), Duration.ofSeconds(2), 0, local, Duration.ofMillis(300), 100),
-                new RedissonLockTemplate(client, keys));
+            new CachePolicy(Duration.ofSeconds(20), Duration.ofSeconds(2), 0, local, Duration.ofMillis(300), 100),
+            new RedissonLockTemplate(client, keys));
     }
 
     @Test
@@ -224,17 +224,18 @@ class DistributedPrimitivesIT {
             assertThat(cache.get("absent", String.class)).isInstanceOf(CacheEntry.Miss.class);
             AtomicInteger loads = new AtomicInteger();
             for (int i = 0; i < 2; i++) {
-                assertThat(cache.<String>getOrLoad("null", String.class, null, true,
-                        () -> { loads.incrementAndGet(); return null; })).isNull();
+                assertThat(cache.<String>getOrLoad("null", String.class, null, true, () -> {
+                    loads.incrementAndGet();
+                    return null;
+                })).isNull();
             }
             assertThat(loads).hasValue(1);
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                    assertThat(cache.get("null", String.class)).isInstanceOf(CacheEntry.Miss.class));
+            await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(cache.get("null", String.class)).isInstanceOf(CacheEntry.Miss.class));
             cache.putAll(Map.of("batch1", 1, "batch2", 2), Duration.ofSeconds(5));
             assertThat(cache.<Integer>getAll(List.of("batch1", "batch2", "missing"), Integer.class))
-                    .containsEntry("batch1", new CacheEntry.Hit<>(1))
-                    .containsEntry("batch2", new CacheEntry.Hit<>(2))
-                    .containsEntry("missing", new CacheEntry.Miss<>());
+                .containsEntry("batch1", new CacheEntry.Hit<>(1)).containsEntry("batch2", new CacheEntry.Hit<>(2))
+                .containsEntry("missing", new CacheEntry.Miss<>());
         }
     }
 
@@ -244,12 +245,12 @@ class DistributedPrimitivesIT {
             second.put("local", "old", Duration.ofSeconds(3));
             assertThat(first.get("local", String.class)).isEqualTo(new CacheEntry.Hit<>("old"));
             second.put("local", "new", Duration.ofSeconds(3));
-            await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
-                    assertThat(first.get("local", String.class)).isEqualTo(new CacheEntry.Hit<>("new")));
+            await().atMost(Duration.ofSeconds(2)).untilAsserted(
+                () -> assertThat(first.get("local", String.class)).isEqualTo(new CacheEntry.Hit<>("new")));
             first.put("short", "value", Duration.ofMillis(80));
             first.get("short", String.class);
-            await().atMost(Duration.ofSeconds(1)).untilAsserted(() ->
-                    assertThat(first.get("short", String.class)).isInstanceOf(CacheEntry.Miss.class));
+            await().atMost(Duration.ofSeconds(1))
+                .untilAsserted(() -> assertThat(first.get("short", String.class)).isInstanceOf(CacheEntry.Miss.class));
         }
     }
 
@@ -260,8 +261,8 @@ class DistributedPrimitivesIT {
         var counters = new RedissonCounterStore(a, keys);
         fields.put("expiring", "field", 7, Duration.ofSeconds(2));
         assertThat(fields.<Integer>get("expiring", "field", Integer.class)).contains(7);
-        await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                assertThat(fields.get("expiring", "field", Integer.class)).isEmpty());
+        await().atMost(Duration.ofSeconds(5))
+            .untilAsserted(() -> assertThat(fields.get("expiring", "field", Integer.class)).isEmpty());
         maps.putAll("persistent", Map.of("a", 1, "b", 2));
         assertThat(maps.<Integer>get("persistent", Integer.class)).containsEntry("b", 2);
         assertThat(counters.increment("counter", 2)).isEqualTo(2);
@@ -272,7 +273,7 @@ class DistributedPrimitivesIT {
     void clusterSingleFlightLoadsOnlyOnce() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         try (RedissonCacheService first = cache(a, false); RedissonCacheService second = cache(b, false);
-             ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<String>> futures = new ArrayList<>();
             for (int i = 0; i < 6; i++) {
                 RedissonCacheService selected = i % 2 == 0 ? first : second;
@@ -298,15 +299,15 @@ class DistributedPrimitivesIT {
             for (int i = 0; i < 24; i++) {
                 RedissonLockTemplate locks = i % 2 == 0 ? locksA : locksB;
                 tasks.add(executor.submit(() -> locks.execute("mutex",
-                        new LockOptions(LockType.REENTRANT, Duration.ofSeconds(30), Duration.ZERO), () -> {
-                    maximum.accumulateAndGet(inside.incrementAndGet(), Math::max);
-                    try {
-                        Thread.sleep(Duration.ofMillis(10));
-                        return 1;
-                    } finally {
-                        inside.decrementAndGet();
-                    }
-                })));
+                    new LockOptions(LockType.REENTRANT, Duration.ofSeconds(30), Duration.ZERO), () -> {
+                        maximum.accumulateAndGet(inside.incrementAndGet(), Math::max);
+                        try {
+                            Thread.sleep(Duration.ofMillis(10));
+                            return 1;
+                        } finally {
+                            inside.decrementAndGet();
+                        }
+                    })));
             }
             for (Future<Integer> task : tasks) {
                 task.get(40, TimeUnit.SECONDS);
@@ -336,7 +337,8 @@ class DistributedPrimitivesIT {
 
     @Test
     void fixedLeaseExpiryIsVisibleAndNeverUnlocksAnotherOwner() throws Exception {
-        LockHandle expired = locksA.tryLock("lease", new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ofMillis(80))).orElseThrow();
+        LockHandle expired = locksA
+            .tryLock("lease", new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ofMillis(80))).orElseThrow();
         Thread.sleep(Duration.ofMillis(150));
         try (LockHandle successor = locksB.tryLock("lease", LockOptions.defaults()).orElseThrow()) {
             assertThatThrownBy(expired::close).isInstanceOf(RdtException.class);
@@ -347,32 +349,37 @@ class DistributedPrimitivesIT {
     @Test
     void scopedManagerKeepsParentLockAcrossNestedScopeAndRenews() throws Exception {
         DefaultLockManager manager = new DefaultLockManager(locksA);
+        LockKey scoped = LockKey.named(DistributedPrimitivesIT.class, "scoped");
         LockOptions immediate = new LockOptions(LockType.REENTRANT, Duration.ZERO, Duration.ZERO);
         try (LockScope outer = manager.beginScope()) {
-            manager.lock("scoped", immediate);
-            manager.lock("scoped", immediate);
+            manager.lock(scoped, immediate);
+            manager.lock(scoped, immediate);
             try (LockScope inner = manager.beginScope()) {
-                manager.lock("scoped", immediate);
-                assertThat(inner.holds("scoped")).isTrue();
+                manager.lock(scoped, immediate);
+                assertThat(inner.holds(scoped)).isTrue();
             }
             Thread.sleep(Duration.ofMillis(1800));
-            assertThat(outer.holds("scoped")).isTrue();
-            assertThat(locksB.tryLock("scoped", immediate)).isEmpty();
+            assertThat(outer.holds(scoped)).isTrue();
+            assertThat(locksB.tryLock(scoped.value(), immediate)).isEmpty();
         }
         assertThat(manager.currentScope()).isNull();
-        try (LockHandle successor = locksB.tryLock("scoped", immediate).orElseThrow()) {
+        try (LockHandle successor = locksB.tryLock(scoped.value(), immediate).orElseThrow()) {
             assertThat(successor.isHeld()).isTrue();
         }
     }
 
     @Test
     void readWriteAndFairLocksUseExpectedOwnership() {
-        try (LockHandle readA = locksA.tryLock("rw", new LockOptions(LockType.READ, Duration.ZERO, Duration.ZERO)).orElseThrow();
-             LockHandle readB = locksB.tryLock("rw", new LockOptions(LockType.READ, Duration.ZERO, Duration.ZERO)).orElseThrow()) {
+        try (
+            LockHandle readA =
+                locksA.tryLock("rw", new LockOptions(LockType.READ, Duration.ZERO, Duration.ZERO)).orElseThrow();
+            LockHandle readB =
+                locksB.tryLock("rw", new LockOptions(LockType.READ, Duration.ZERO, Duration.ZERO)).orElseThrow()) {
             assertThat(readA.isHeld() && readB.isHeld()).isTrue();
             assertThat(locksB.tryLock("rw", new LockOptions(LockType.WRITE, Duration.ZERO, Duration.ZERO))).isEmpty();
         }
-        try (LockHandle fair = locksA.tryLock("fair", new LockOptions(LockType.FAIR, Duration.ZERO, Duration.ZERO)).orElseThrow()) {
+        try (LockHandle fair =
+            locksA.tryLock("fair", new LockOptions(LockType.FAIR, Duration.ZERO, Duration.ZERO)).orElseThrow()) {
             assertThat(fair.isHeld()).isTrue();
             assertThat(locksB.tryLock("fair", new LockOptions(LockType.FAIR, Duration.ZERO, Duration.ZERO))).isEmpty();
         }
@@ -421,12 +428,15 @@ class DistributedPrimitivesIT {
         assertThat(first.tryAcquire("rate", 2, Duration.ofSeconds(10), Duration.ZERO)).isTrue();
         assertThat(second.tryAcquire("rate", 2, Duration.ofSeconds(10), Duration.ZERO)).isTrue();
         assertThat(first.tryAcquire("rate", 2, Duration.ofSeconds(10), Duration.ZERO)).isFalse();
-        assertThatThrownBy(() -> second.tryAcquire("rate", 3, Duration.ofSeconds(10), Duration.ZERO)).isInstanceOf(RdtException.class);
-        try (LockHandle permit = first.tryConcurrency("concurrent", 1, Duration.ZERO, Duration.ofSeconds(3)).orElseThrow()) {
+        assertThatThrownBy(() -> second.tryAcquire("rate", 3, Duration.ofSeconds(10), Duration.ZERO))
+            .isInstanceOf(RdtException.class);
+        try (LockHandle permit =
+            first.tryConcurrency("concurrent", 1, Duration.ZERO, Duration.ofSeconds(3)).orElseThrow()) {
             assertThat(permit.isHeld()).isTrue();
             assertThat(second.tryConcurrency("concurrent", 1, Duration.ZERO, Duration.ofSeconds(3))).isEmpty();
         }
-        try (LockHandle permit = second.tryConcurrency("concurrent", 1, Duration.ZERO, Duration.ofSeconds(3)).orElseThrow()) {
+        try (LockHandle permit =
+            second.tryConcurrency("concurrent", 1, Duration.ZERO, Duration.ofSeconds(3)).orElseThrow()) {
             assertThat(permit.isHeld()).isTrue();
         }
     }
@@ -453,18 +463,23 @@ class DistributedPrimitivesIT {
     void idempotencyLeaseAndCompletionAreSharedAcrossClients() throws Exception {
         RedissonIdempotencyTemplate first = new RedissonIdempotencyTemplate(a, keys);
         RedissonIdempotencyTemplate second = new RedissonIdempotencyTemplate(b, keys);
-        try (IdempotencyHandle handle = first.tryStart("order-1", Duration.ofSeconds(2), Duration.ofSeconds(1)).orElseThrow()) {
+        try (IdempotencyHandle handle =
+            first.tryStart("order-1", Duration.ofSeconds(2), Duration.ofSeconds(1)).orElseThrow()) {
             assertThat(second.tryStart("order-1", Duration.ofSeconds(2), Duration.ofSeconds(1))).isEmpty();
             assertThat(handle.complete()).isTrue();
             assertThat(first.isCompleted("order-1")).isTrue();
             assertThat(second.tryStart("order-1", Duration.ofSeconds(2), Duration.ofSeconds(1))).isEmpty();
         }
-        await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
-                assertThat(first.isCompleted("order-1")).isFalse());
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(first.isCompleted("order-1")).isFalse());
     }
 
     private RedissonMessageQueueTemplate messages(RedissonClient client, List<FailedMessage> failures) {
-        return new RedissonMessageQueueTemplate(client, keys, json, new QueuePolicy(3, Duration.ofMillis(30), Duration.ofMillis(120), Duration.ofMillis(50), Duration.ofSeconds(3), false, Duration.ZERO, Duration.ZERO, 0, 1, Duration.ofMinutes(1), 16, 4, 8, 32, 262144, 10000, 67108864L, 16777216), new RedissonLockTemplate(client, keys), failures::add, leasedIdentity(client, keys, null), RetryClassifier.infrastructureFailures());
+        return new RedissonMessageQueueTemplate(client, keys, json,
+            new QueuePolicy(3, Duration.ofMillis(30), Duration.ofMillis(120), Duration.ofMillis(50),
+                Duration.ofSeconds(3), false, Duration.ZERO, Duration.ZERO, 0, 1, Duration.ofMinutes(1), 16, 4, 8, 32,
+                262144, 10000, 67108864L, 16777216),
+            new RedissonLockTemplate(client, keys), failures::add, leasedIdentity(client, keys, null),
+            RetryClassifier.infrastructureFailures());
     }
 
     @Test
@@ -473,10 +488,16 @@ class DistributedPrimitivesIT {
         List<FailedMessage> failures = new CopyOnWriteArrayList<>();
         Set<String> firstReceived = ConcurrentHashMap.newKeySet();
         Set<String> secondReceived = ConcurrentHashMap.newKeySet();
-        var policy = new QueuePolicy(3, Duration.ofMillis(30), Duration.ofSeconds(2), Duration.ofMillis(50), Duration.ofSeconds(3), false, Duration.ZERO, Duration.ZERO, 0, 1, Duration.ofMinutes(1), 16, 4, 8, 32, 262144, 10000, 67108864L, 16777216);
-        try (var first = new RedissonMessageQueueTemplate(a, keys, json, policy, locksA, failures::add, leasedIdentity(a, keys, "node-a"), RetryClassifier.infrastructureFailures());
-             var second = new RedissonMessageQueueTemplate(b, keys, json, policy, locksB, failures::add, leasedIdentity(b, keys, "node-b"), RetryClassifier.infrastructureFailures())) {
-            var subscription = new QueueSubscription(destination, QueueMode.RELIABLE_BROADCAST, "local-cache-v1", 1, "Warframe缓存更新广播", QueueOptions.defaults(), 0, destination + ":" + "local-cache-v1");
+        var policy = new QueuePolicy(3, Duration.ofMillis(30), Duration.ofSeconds(2), Duration.ofMillis(50),
+            Duration.ofSeconds(3), false, Duration.ZERO, Duration.ZERO, 0, 1, Duration.ofMinutes(1), 16, 4, 8, 32,
+            262144, 10000, 67108864L, 16777216);
+        try (
+            var first = new RedissonMessageQueueTemplate(a, keys, json, policy, locksA, failures::add,
+                leasedIdentity(a, keys, "node-a"), RetryClassifier.infrastructureFailures());
+            var second = new RedissonMessageQueueTemplate(b, keys, json, policy, locksB, failures::add,
+                leasedIdentity(b, keys, "node-b"), RetryClassifier.infrastructureFailures())) {
+            var subscription = new QueueSubscription(destination, QueueMode.RELIABLE_BROADCAST, "local-cache-v1", 1,
+                "Warframe缓存更新广播", QueueOptions.defaults(), 0, destination + ":" + "local-cache-v1");
             first.subscribe(subscription, message -> firstReceived.add(message.id()));
             second.subscribe(subscription, message -> secondReceived.add(message.id()));
             String id = first.reliableBroadcast(destination, "updated");
@@ -487,8 +508,7 @@ class DistributedPrimitivesIT {
             var queries = new RedissonManagementQueryService(b, keys, json);
             assertThat(queries.stream(destination).orElseThrow().displayName()).isEqualTo("Warframe缓存更新广播");
             assertThat(queries.stream(destination).orElseThrow().groups()).extracting(group -> group.name())
-                    .containsExactlyInAnyOrder("local-cache-v1:" + "node-a",
-                            "local-cache-v1:" + "node-b");
+                .containsExactlyInAnyOrder("local-cache-v1:" + "node-a", "local-cache-v1:" + "node-b");
             assertThat(failures).isEmpty();
         }
     }
@@ -500,16 +520,15 @@ class DistributedPrimitivesIT {
         Set<String> processed = ConcurrentHashMap.newKeySet();
         var queries = new RedissonManagementQueryService(b, keys, json);
         try (var first = messages(a, failures); var second = messages(b, failures)) {
-            first.subscribe(new QueueSubscription(destination, QueueMode.STREAM, "workers", 1, "Warframe世界状态刷新", QueueOptions.defaults(), 0, destination + ":" + "workers"),
-                    message -> processed.add(message.id()));
-            second.subscribe(new QueueSubscription(destination, QueueMode.STREAM, "workers", 1, "", QueueOptions.defaults(), 0, destination + ":" + "workers"),
-                    message -> processed.add(message.id()));
+            first.subscribe(new QueueSubscription(destination, QueueMode.STREAM, "workers", 1, "Warframe世界状态刷新",
+                QueueOptions.defaults(), 0, destination + ":" + "workers"), message -> processed.add(message.id()));
+            second.subscribe(new QueueSubscription(destination, QueueMode.STREAM, "workers", 1, "",
+                QueueOptions.defaults(), 0, destination + ":" + "workers"), message -> processed.add(message.id()));
             String messageId = first.send(destination, "latest");
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                    assertThat(processed).contains(messageId));
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                    assertThat(queries.stream(destination).orElseThrow().groups()).singleElement()
-                            .satisfies(group -> assertThat(group.pending()).isZero()));
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(processed).contains(messageId));
+            await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(queries.stream(destination).orElseThrow().groups()).singleElement()
+                    .satisfies(group -> assertThat(group.pending()).isZero()));
             var view = queries.stream(destination).orElseThrow();
             assertThat(view.displayName()).isEqualTo("Warframe世界状态刷新");
             assertThat(view.destination()).isEqualTo(destination);
@@ -518,19 +537,22 @@ class DistributedPrimitivesIT {
             assertThat(a.getStream(keys.key("stream", destination)).remainTimeToLive()).isEqualTo(-1);
 
             Message failed = Message.create("failed", json);
-            new RedisFailedMessageStore(a, keys, json).save(FailedMessage.stream(destination, "workers", failed,
-                    3, "test", "2026-09-23T00:00:00Z"));
-            assertThat(queries.deadLetters(0, 200).items().stream().filter(entry -> entry.messageId().equals(failed.id())))
-                    .singleElement().satisfies(entry -> assertThat(entry.displayName()).isEqualTo("Warframe世界状态刷新"));
+            new RedisFailedMessageStore(a, keys, json)
+                .save(FailedMessage.stream(destination, "workers", failed, 3, "test", "2026-09-23T00:00:00Z"));
+            assertThat(
+                queries.deadLetters(0, 200).items().stream().filter(entry -> entry.messageId().equals(failed.id())))
+                .singleElement().satisfies(entry -> assertThat(entry.displayName()).isEqualTo("Warframe世界状态刷新"));
             assertThat(a.getMap(keys.key("dead-letters", destination)).remainTimeToLive()).isEqualTo(-1);
 
-            second.subscribe(new QueueSubscription(destination, QueueMode.STREAM, "other-workers", 1, "Warframe刷新请求", QueueOptions.defaults(), 0, destination + ":" + "other-workers"),
-                    message -> { });
+            second.subscribe(new QueueSubscription(destination, QueueMode.STREAM, "other-workers", 1, "Warframe刷新请求",
+                QueueOptions.defaults(), 0, destination + ":" + "other-workers"), message -> {
+                });
             assertThat(queries.stream(destination).orElseThrow().displayName()).isEqualTo("Warframe刷新请求");
             first.send("unnamed-display-v1", "unnamed");
-            assertThat(queries.stream("unnamed-display-v1").orElseThrow().displayName()).isEqualTo("unnamed-display-v1");
+            assertThat(queries.stream("unnamed-display-v1").orElseThrow().displayName())
+                .isEqualTo("unnamed-display-v1");
             assertThat(new RedissonManagementQueryService(b, new KeySpace(keys.namespace() + ":other"), json)
-                    .stream(destination)).isEmpty();
+                .stream(destination)).isEmpty();
         }
     }
 
@@ -539,15 +561,18 @@ class DistributedPrimitivesIT {
         List<FailedMessage> failures = new CopyOnWriteArrayList<>();
         AtomicInteger invocations = new AtomicInteger();
         try (RedissonMessageQueueTemplate transport = messages(a, failures)) {
-            transport.subscribe(new QueueSubscription("retry", QueueMode.STREAM, "workers", 1, "", QueueOptions.defaults(), 0, "retry" + ":" + "workers"), message -> {
-                invocations.incrementAndGet();
-                throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "transient downstream failure");
-            });
+            transport.subscribe(new QueueSubscription("retry", QueueMode.STREAM, "workers", 1, "",
+                QueueOptions.defaults(), 0, "retry" + ":" + "workers"), message -> {
+                    invocations.incrementAndGet();
+                    throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "transient downstream failure");
+                });
             String id = transport.send("retry", "payload");
             await().atMost(Duration.ofSeconds(8)).untilAsserted(() -> assertThat(failures).hasSize(1));
             assertThat(invocations).hasValue(3);
             assertThat(failures.getFirst().message().id()).isEqualTo(id);
-            assertThat(a.getStream(keys.key("stream", "retry"), StringCodec.INSTANCE).getPendingInfo("workers").getTotal()).isZero();
+            assertThat(
+                a.getStream(keys.key("stream", "retry"), StringCodec.INSTANCE).getPendingInfo("workers").getTotal())
+                .isZero();
         }
     }
 
@@ -556,26 +581,21 @@ class DistributedPrimitivesIT {
         List<FailedMessage> failures = new CopyOnWriteArrayList<>();
         AtomicInteger shortAttempts = new AtomicInteger();
         AtomicInteger longAttempts = new AtomicInteger();
-        QueueOptions shortPolicy = QueueOptions.builder()
-                .maxAttempts(2)
-                .retryDelay(Duration.ofMillis(20))
-                .maxRetryDelay(Duration.ofMillis(40))
-                .build();
-        QueueOptions longPolicy = QueueOptions.builder()
-                .maxAttempts(4)
-                .retryDelay(Duration.ofMillis(20))
-                .retryMultiplier(2)
-                .maxRetryDelay(Duration.ofMillis(100))
-                .build();
+        QueueOptions shortPolicy = QueueOptions.builder().maxAttempts(2).retryDelay(Duration.ofMillis(20))
+            .maxRetryDelay(Duration.ofMillis(40)).build();
+        QueueOptions longPolicy = QueueOptions.builder().maxAttempts(4).retryDelay(Duration.ofMillis(20))
+            .retryMultiplier(2).maxRetryDelay(Duration.ofMillis(100)).build();
         try (RedissonMessageQueueTemplate transport = messages(a, failures)) {
-            transport.subscribe(new QueueSubscription("short-retry", QueueMode.STREAM, "workers", 1, "", shortPolicy, 0, "short-retry" + ":" + "workers"), message -> {
-                shortAttempts.incrementAndGet();
-                throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "short failure budget");
-            });
-            transport.subscribe(new QueueSubscription("long-retry", QueueMode.STREAM, "workers", 1, "", longPolicy, 0, "long-retry" + ":" + "workers"), message -> {
-                longAttempts.incrementAndGet();
-                throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "long failure budget");
-            });
+            transport.subscribe(new QueueSubscription("short-retry", QueueMode.STREAM, "workers", 1, "", shortPolicy, 0,
+                "short-retry" + ":" + "workers"), message -> {
+                    shortAttempts.incrementAndGet();
+                    throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "short failure budget");
+                });
+            transport.subscribe(new QueueSubscription("long-retry", QueueMode.STREAM, "workers", 1, "", longPolicy, 0,
+                "long-retry" + ":" + "workers"), message -> {
+                    longAttempts.incrementAndGet();
+                    throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "long failure budget");
+                });
             transport.send("short-retry", "short");
             transport.send("long-retry", "long");
 
@@ -590,14 +610,17 @@ class DistributedPrimitivesIT {
         List<FailedMessage> failures = new CopyOnWriteArrayList<>();
         Set<String> processed = ConcurrentHashMap.newKeySet();
         try (RedissonMessageQueueTemplate producer = messages(a, failures);
-             RedissonMessageQueueTemplate recovery = messages(b, failures)) {
+            RedissonMessageQueueTemplate recovery = messages(b, failures)) {
             RStream<String, String> stream = a.getStream(keys.key("stream", "recover"), StringCodec.INSTANCE);
             stream.createGroup(StreamCreateGroupArgs.name("workers").id(StreamMessageId.ALL).makeStream());
             String id = producer.send("recover", "durable");
-            assertThat(stream.readGroup("workers", "dead-consumer", StreamReadGroupArgs.neverDelivered().count(1))).hasSize(1);
-            recovery.subscribe(new QueueSubscription("recover", QueueMode.STREAM, "workers", 1, "", QueueOptions.defaults(), 0, "recover" + ":" + "workers"), message -> processed.add(message.id()));
+            assertThat(stream.readGroup("workers", "dead-consumer", StreamReadGroupArgs.neverDelivered().count(1)))
+                .hasSize(1);
+            recovery.subscribe(new QueueSubscription("recover", QueueMode.STREAM, "workers", 1, "",
+                QueueOptions.defaults(), 0, "recover" + ":" + "workers"), message -> processed.add(message.id()));
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(processed).contains(id));
-            await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> assertThat(stream.getPendingInfo("workers").getTotal()).isZero());
+            await().atMost(Duration.ofSeconds(2))
+                .untilAsserted(() -> assertThat(stream.getPendingInfo("workers").getTotal()).isZero());
             assertThat(failures).isEmpty();
         }
     }
@@ -607,19 +630,20 @@ class DistributedPrimitivesIT {
         KeySpace overviewKeys = new KeySpace("rdt-it:overview:" + UUID.randomUUID());
         try {
             RedissonManagementQueryService queries = new RedissonManagementQueryService(a, overviewKeys, json);
-            assertThat(queries.overview()).isEqualTo(
-                    new ManagementOverview(overviewKeys.namespace(), 0, 0, 0, 0, 0, 0, 0, false));
+            assertThat(queries.overview())
+                .isEqualTo(new ManagementOverview(overviewKeys.namespace(), 0, 0, 0, 0, 0, 0, 0, false));
             RStream<String, String> stream = a.getStream(overviewKeys.key("stream", "work"), StringCodec.INSTANCE);
             stream.createGroup(StreamCreateGroupArgs.name("workers").id(StreamMessageId.ALL).makeStream());
             stream.add(StreamAddArgs.entry("message", "payload"));
             stream.readGroup("workers", "worker", StreamReadGroupArgs.neverDelivered().count(1));
             a.<String, String>getMap(overviewKeys.key("schedule-state", "task"), StringCodec.INSTANCE)
-                    .putAll(Map.of("definition", "PT1H", "next", "1000"));
-            RMap<String, String> results = a.getMap(
-                    overviewKeys.key("schedule-results", "task"), StringCodec.INSTANCE);
+                .putAll(Map.of("definition", "PT1H", "next", "1000"));
+            RMap<String, String> results = a.getMap(overviewKeys.key("schedule-results", "task"), StringCodec.INSTANCE);
             Map<String, String> history = new HashMap<>();
             for (int i = 0; i < 220; i++) {
-                history.put(Integer.toString(i), json.write(new TaskResult("task", Integer.toString(i), "1", "2", "worker", i % 2 == 0, "detail", "test-run", "test-execution", 1, (i % 2 == 0) ? "SUCCEEDED" : "FAILED")));
+                history.put(Integer.toString(i),
+                    json.write(new TaskResult("task", Integer.toString(i), "1", "2", "worker", i % 2 == 0, "detail",
+                        "test-run", "test-execution", 1, (i % 2 == 0) ? "SUCCEEDED" : "FAILED")));
             }
             results.putAll(history);
             var index = new ManagementIndex(a, overviewKeys);
@@ -627,23 +651,26 @@ class DistributedPrimitivesIT {
             index.register("tasks", "task");
             history.keySet().forEach(id -> {
                 index.record("attempts:task", id, Long.parseLong(id), Duration.ZERO);
-                if (Integer.parseInt(id) % 2 != 0) index.record("failures:task", id, Long.parseLong(id), Duration.ZERO);
+                if (Integer.parseInt(id) % 2 != 0)
+                    index.record("failures:task", id, Long.parseLong(id), Duration.ZERO);
             });
-            String failure = json.write(new TaskResult("task", "0", "1", "2", "worker", false, "expired", "test-run", "test-execution", 1, (false) ? "SUCCEEDED" : "FAILED"));
+            String failure = json.write(new TaskResult("task", "0", "1", "2", "worker", false, "expired", "test-run",
+                "test-execution", 1, (false) ? "SUCCEEDED" : "FAILED"));
             results.fastPut("expired", failure);
             results.fastRemove("expired");
             a.<String, String>getMap(overviewKeys.key("schedule-results", "orphan"), StringCodec.INSTANCE)
-                    .fastPut("orphan", failure);
+                .fastPut("orphan", failure);
             // Overview must count entries without trying to decode dead-letter payloads.
             a.<String, String>getMapCache(overviewKeys.key("dead-letters", "work"), StringCodec.INSTANCE)
-                    .putAll(Map.of("one", "payload", "two", "payload"));
+                .putAll(Map.of("one", "payload", "two", "payload"));
             index.record("dead-letters", "one", 1, Duration.ZERO);
             index.record("dead-letters", "two", 2, Duration.ZERO);
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                    assertThat(results.containsKey("expired")).isFalse());
-            assertThat(queries.overview()).isEqualTo(
-                    new ManagementOverview(overviewKeys.namespace(), 1, 1, 1, 1, 1, 110, 2, false));
-            assertThat(queries.tasks(0, 200).items()).singleElement().satisfies(task -> assertThat(task.taskId()).isEqualTo("task"));
+            await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(results.containsKey("expired")).isFalse());
+            assertThat(queries.overview())
+                .isEqualTo(new ManagementOverview(overviewKeys.namespace(), 1, 1, 1, 1, 1, 110, 2, false));
+            assertThat(queries.tasks(0, 200).items()).singleElement()
+                .satisfies(task -> assertThat(task.taskId()).isEqualTo("task"));
             assertThat(queries.taskResults("task", 0, 200)).hasSize(200);
             assertThat(queries.taskResults("task", 200, 200)).hasSize(20);
         } finally {
@@ -653,13 +680,14 @@ class DistributedPrimitivesIT {
 
     @Test
     void managementCommandsOperateOnOneNamespaceAndIndividualResources() {
-        RedissonManagementCommandService commands = new RedissonManagementCommandService(a, keys, locksA, new JsonCodec());
+        RedissonManagementCommandService commands =
+            new RedissonManagementCommandService(a, keys, locksA, new JsonCodec());
         RedissonManagementQueryService queries = new RedissonManagementQueryService(a, keys, json);
 
         String taskId = "manual-trigger";
         long originalNext = System.currentTimeMillis() + Duration.ofHours(1).toMillis();
-        a.<String, String>getMap(keys.key("schedule-state", taskId), StringCodec.INSTANCE).putAll(Map.of(
-                "definition", "PT1H", "next", Long.toString(originalNext)));
+        a.<String, String>getMap(keys.key("schedule-state", taskId), StringCodec.INSTANCE)
+            .putAll(Map.of("definition", "PT1H", "next", Long.toString(originalNext)));
         assertThat(commands.triggerTask(taskId)).isTrue();
         var state = a.<String, String>getMap(keys.key("schedule-state", taskId), StringCodec.INSTANCE);
         JobExecution requested = json.read(state.get("execution"), JobExecution.class);
@@ -671,10 +699,10 @@ class DistributedPrimitivesIT {
 
         var retryState = a.<String, String>getMap(keys.key("schedule-state", "manual-retry"), StringCodec.INSTANCE);
         long retryAt = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
-        var waiting = new JobExecution("retry-execution", "manual-retry", 1000, 1, "RETRY_WAIT",
-                "worker", "run", "token", retryAt - 1000, retryAt, "retry waiting", 0);
-        retryState.putAll(Map.of("definition", "PT1H", "next", Long.toString(originalNext),
-                "execution", json.write(waiting)));
+        var waiting = new JobExecution("retry-execution", "manual-retry", 1000, 1, "RETRY_WAIT", "worker", "run",
+            "token", retryAt - 1000, retryAt, "retry waiting", 0);
+        retryState.putAll(
+            Map.of("definition", "PT1H", "next", Long.toString(originalNext), "execution", json.write(waiting)));
         assertThat(commands.triggerTask("manual-retry")).isFalse();
         assertThat(json.<JobExecution>read(retryState.get("execution"), JobExecution.class)).isEqualTo(waiting);
 
@@ -683,7 +711,7 @@ class DistributedPrimitivesIT {
         StreamMessageId messageId = stream.add(org.redisson.api.stream.StreamAddArgs.entry("message", "payload"));
         stream.readGroup("operators", "operator-1", StreamReadGroupArgs.neverDelivered().count(1));
         assertThat(queries.streamMessages("administration", 10)).extracting(message -> message.id())
-                .contains(messageId.toString());
+            .contains(messageId.toString());
         assertThat(commands.deleteStreamMessage("administration", messageId.toString())).isTrue();
         assertThat(stream.range(StreamMessageId.MIN, StreamMessageId.MAX)).isEmpty();
         assertThat(stream.getPendingInfo("operators").getTotal()).isZero();
@@ -692,11 +720,11 @@ class DistributedPrimitivesIT {
         String group = "operators";
         String failedId = "1-0";
         String field = RdtSupport.component(group) + ":" + RdtSupport.component(failedId);
-        a.<String, String>getMap(keys.key("dead-letters", destination), StringCodec.INSTANCE)
-                .fastPut(field, "failure");
+        a.<String, String>getMap(keys.key("dead-letters", destination), StringCodec.INSTANCE).fastPut(field, "failure");
         assertThat(commands.deleteDeadLetter(destination, group, failedId, "")).isTrue();
-        assertThat(a.<String, String>getMap(keys.key("dead-letters", destination), StringCodec.INSTANCE).containsKey(field))
-                .isFalse();
+        assertThat(
+            a.<String, String>getMap(keys.key("dead-letters", destination), StringCodec.INSTANCE).containsKey(field))
+            .isFalse();
     }
 
     @Test
@@ -707,7 +735,7 @@ class DistributedPrimitivesIT {
         AtomicInteger max = new AtomicInteger();
         CountDownLatch done = new CountDownLatch(1);
         try (RedissonMessageQueueTemplate first = messages(a, failures);
-             RedissonMessageQueueTemplate second = messages(b, failures)) {
+            RedissonMessageQueueTemplate second = messages(b, failures)) {
             MessageHandler handler = message -> {
                 invocations.incrementAndGet();
                 max.accumulateAndGet(inside.incrementAndGet(), Math::max);
@@ -718,12 +746,14 @@ class DistributedPrimitivesIT {
                 }
                 done.countDown();
             };
-            first.subscribe(new QueueSubscription("slow", QueueMode.STREAM, "workers", 1, "", QueueOptions.defaults(), 0, "slow" + ":" + "workers"), handler);
-            second.subscribe(new QueueSubscription("slow", QueueMode.STREAM, "workers", 1, "", QueueOptions.defaults(), 0, "slow" + ":" + "workers"), handler);
+            first.subscribe(new QueueSubscription("slow", QueueMode.STREAM, "workers", 1, "", QueueOptions.defaults(),
+                0, "slow" + ":" + "workers"), handler);
+            second.subscribe(new QueueSubscription("slow", QueueMode.STREAM, "workers", 1, "", QueueOptions.defaults(),
+                0, "slow" + ":" + "workers"), handler);
             first.send("slow", "longer-than-visibility");
             await().atMost(Duration.ofSeconds(5)).until(() -> done.getCount() == 0);
             await().during(Duration.ofMillis(400)).atMost(Duration.ofSeconds(2))
-                    .untilAsserted(() -> assertThat(invocations).hasValue(1));
+                .untilAsserted(() -> assertThat(invocations).hasValue(1));
             assertThat(max).hasValue(1);
         }
     }
@@ -734,11 +764,15 @@ class DistributedPrimitivesIT {
         Set<String> received = ConcurrentHashMap.newKeySet();
         AtomicInteger broadcasts = new AtomicInteger();
         try (RedissonMessageQueueTemplate first = messages(a, failures);
-             RedissonMessageQueueTemplate second = messages(b, failures)) {
-            first.subscribe(new QueueSubscription("ordinary", QueueMode.STREAM, "default", 1, "", QueueOptions.defaults(), 0, "ordinary" + ":" + "default"), m -> received.add(m.id()));
-            second.subscribe(new QueueSubscription("delayed", QueueMode.STREAM, "default", 1, "", QueueOptions.defaults(), 0, "delayed" + ":" + "default"), m -> received.add(m.id()));
-            first.subscribe(new QueueSubscription("broadcast", QueueMode.BROADCAST, "default", 1, "", QueueOptions.defaults(), 0, "broadcast" + ":" + "default"), m -> broadcasts.incrementAndGet());
-            second.subscribe(new QueueSubscription("broadcast", QueueMode.BROADCAST, "default", 1, "", QueueOptions.defaults(), 0, "broadcast" + ":" + "default"), m -> broadcasts.incrementAndGet());
+            RedissonMessageQueueTemplate second = messages(b, failures)) {
+            first.subscribe(new QueueSubscription("ordinary", QueueMode.STREAM, "default", 1, "",
+                QueueOptions.defaults(), 0, "ordinary" + ":" + "default"), m -> received.add(m.id()));
+            second.subscribe(new QueueSubscription("delayed", QueueMode.STREAM, "default", 1, "",
+                QueueOptions.defaults(), 0, "delayed" + ":" + "default"), m -> received.add(m.id()));
+            first.subscribe(new QueueSubscription("broadcast", QueueMode.BROADCAST, "default", 1, "",
+                QueueOptions.defaults(), 0, "broadcast" + ":" + "default"), m -> broadcasts.incrementAndGet());
+            second.subscribe(new QueueSubscription("broadcast", QueueMode.BROADCAST, "default", 1, "",
+                QueueOptions.defaults(), 0, "broadcast" + ":" + "default"), m -> broadcasts.incrementAndGet());
             String ordinary = first.send("ordinary", "one", QueueMode.STREAM);
             String delayed = first.sendDelayed("delayed", "two", Duration.ofMillis(150));
             first.broadcast("broadcast", "three");
@@ -752,7 +786,8 @@ class DistributedPrimitivesIT {
     private RuntimeIdentity leasedIdentity(RedissonClient client, KeySpace keys, String id) {
         var identity = new RuntimeIdentity(id);
         var leases = new RedisOwnerLeaseService(client, keys, new RedissonLockTemplate(client, keys));
-        var lease = leases.acquire("node:" + identity.instanceId(), identity.instanceId(), Duration.ofMinutes(5)).orElseThrow();
+        var lease =
+            leases.acquire("node:" + identity.instanceId(), identity.instanceId(), Duration.ofMinutes(5)).orElseThrow();
         identity.acquired(lease.token(), lease.fencingVersion(), () -> leases.isHeld(lease));
         return identity;
     }

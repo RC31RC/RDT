@@ -32,23 +32,27 @@ public class RdtArchiveConfiguration {
     public RdtArchiveSinkFactory localFileArchiveSinkFactory(RdtArchiveProperties properties) {
         return date -> {
             var target = properties.directory().resolve("rdt-archive-" + date + ".jsonl.gz");
-            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) return Optional.empty();
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS))
+                return Optional.empty();
             return Optional.of(new LocalFileArchiveSink(properties.directory(), date, properties.retentionDays()));
         };
     }
 
     @Bean
     public RdtArchiveJob rdtArchiveJob(ConsoleConnectionManager connections, RdtArchiveSinkFactory sinks,
-                                     RdtArchiveProperties properties) {
+        RdtArchiveProperties properties) {
         var json = new JsonCodec();
         var source = new RdtArchiveJob.Source() {
             @Override
-            public boolean available() { return connections.runtimeConfigured(); }
+            public boolean available() {
+                return connections.runtimeConfigured();
+            }
 
             @Override
             public long read(Instant at, Consumer<List<String>> destination) {
-                return connections.withRuntime((client, namespaces) ->
-                        new RedisArchiveReader(client, json, namespaces, properties.dispatchedTimeout()).read(at, destination));
+                return connections.withRuntime((client,
+                    namespaces) -> new RedisArchiveReader(client, json, namespaces, properties.dispatchedTimeout())
+                        .read(at, destination));
             }
         };
         return new RdtArchiveJob(source, sinks, Clock.system(properties.zone()));
@@ -65,7 +69,8 @@ public class RdtArchiveConfiguration {
         executor.setKeepAliveSeconds(30);
         executor.setThreadNamePrefix("rdt-archive-");
         // No backlog: an invocation arriving during a run is skipped immediately.
-        executor.setRejectedExecutionHandler((task, pool) -> LOG.info("Skipping archive: executor is occupied or stopping"));
+        executor.setRejectedExecutionHandler(
+            (task, pool) -> LOG.info("Skipping archive: executor is occupied or stopping"));
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         return executor;

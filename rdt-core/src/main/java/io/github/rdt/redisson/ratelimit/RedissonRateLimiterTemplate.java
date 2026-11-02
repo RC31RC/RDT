@@ -26,6 +26,7 @@ public final class RedissonRateLimiterTemplate implements RateLimiterTemplate {
 
     /**
      * 创建限流器。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param idleTtl QPS 限流器空闲保留时长，必须不小于配置的统计间隔
@@ -39,13 +40,14 @@ public final class RedissonRateLimiterTemplate implements RateLimiterTemplate {
     @Override
     public boolean tryAcquire(String key, long permits, Duration interval, Duration wait) {
         RdtSupport.positive(interval, "rate interval");
-        RdtSupport.require(permits > 0 && wait != null && !wait.isNegative() && idleTtl.compareTo(interval) >= 0, "Invalid QPS policy");
+        RdtSupport.require(permits > 0 && wait != null && !wait.isNegative() && idleTtl.compareTo(interval) >= 0,
+            "Invalid QPS policy");
         return RedisSupport.redis("acquire rate permit", () -> {
             RRateLimiter limiter = client.getRateLimiter(keys.key("qps", key));
             limiter.trySetRate(RateType.OVERALL, permits, interval, idleTtl);
             RateLimiterConfig config = limiter.getConfig();
             RdtSupport.require(config.getRate() == permits && config.getRateInterval() == interval.toMillis()
-                    && config.getRateType() == RateType.OVERALL, "Conflicting QPS configuration for key");
+                && config.getRateType() == RateType.OVERALL, "Conflicting QPS configuration for key");
             return limiter.tryAcquire(1, wait);
         });
     }
@@ -91,8 +93,9 @@ public final class RedissonRateLimiterTemplate implements RateLimiterTemplate {
         @Override
         public void close() {
             if (closed.compareAndSet(false, true)
-                    && !RedisSupport.redis("release concurrency lease", () -> semaphore.tryRelease(id))) {
-                throw new RdtLockException(RdtErrorCode.LOCK_OWNERSHIP, "Concurrency lease expired; execution exceeded its bound");
+                && !RedisSupport.redis("release concurrency lease", () -> semaphore.tryRelease(id))) {
+                throw new RdtLockException(RdtErrorCode.LOCK_OWNERSHIP,
+                    "Concurrency lease expired; execution exceeded its bound");
             }
         }
     }

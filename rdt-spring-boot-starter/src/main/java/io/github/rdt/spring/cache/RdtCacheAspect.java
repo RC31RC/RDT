@@ -30,6 +30,7 @@ public final class RdtCacheAspect {
 
     /**
      * 创建缓存切面。
+     *
      * @param cache 功能模板
      * @param locks 缓存回源互斥锁
      * @param methods 表达式解析支持组件
@@ -42,6 +43,7 @@ public final class RdtCacheAspect {
 
     /**
      * 在分布式锁内回源；已存在外层事务时绕过缓存，避免缓存未提交数据。
+     *
      * @param point 方法调用
      * @param annotation 缓存定义
      * @return 缓存命中值或回源结果
@@ -60,8 +62,8 @@ public final class RdtCacheAspect {
         if (entry instanceof CacheEntry.Hit<Object>(Object value)) {
             return value;
         }
-        try (LockHandle ignored = locks.tryLock("cache-load:" + key, LockOptions.defaults()).orElseThrow(
-                () -> new RdtLockException(RdtErrorCode.LOCK_TIMEOUT, "Cache loader deadline exceeded"))) {
+        try (LockHandle ignored = locks.tryLock("cache-load:" + key, LockOptions.defaults())
+            .orElseThrow(() -> new RdtLockException(RdtErrorCode.LOCK_TIMEOUT, "Cache loader deadline exceeded"))) {
             // 在选中 region 内二次检查；getAll 与普通读取遵守同一有限陈旧策略。
             CacheEntry<Object> second = selected.<Object>getAll(List.of(key), method.getGenericReturnType()).get(key);
             if (second instanceof CacheEntry.Hit<Object>(Object value)) {
@@ -77,6 +79,7 @@ public final class RdtCacheAspect {
 
     /**
      * 仅在业务成功且事务提交后更新缓存。
+     *
      * @param point 方法调用
      * @param annotation 缓存写入定义
      * @return 方法结果
@@ -95,6 +98,7 @@ public final class RdtCacheAspect {
 
     /**
      * 在配置指定的执行边界清除缓存。
+     *
      * @param point 方法调用
      * @param annotation 缓存清除定义
      * @return 方法结果
@@ -119,7 +123,7 @@ public final class RdtCacheAspect {
 
     private void afterCommit(Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()
-                && TransactionSynchronizationManager.isActualTransactionActive()) {
+            && TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(new CacheSynchronization(action));
         } else {
             action.run();

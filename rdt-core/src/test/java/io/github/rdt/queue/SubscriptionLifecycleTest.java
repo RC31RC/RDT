@@ -34,18 +34,28 @@ class SubscriptionLifecycleTest {
             listener.set(invocation.getArgument(1));
             return 7;
         });
-        var policy = new QueuePolicy(3, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(1), Duration.ofSeconds(1), true, Duration.ofDays(1), Duration.ofDays(1), 100, 2, Duration.ofMinutes(1), 1, 4, 8, 32, 262144, 10000, 67108864L, 16777216);
+        var policy = new QueuePolicy(3, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(1),
+            Duration.ofSeconds(1), true, Duration.ofDays(1), Duration.ofDays(1), 100, 2, Duration.ofMinutes(1), 1, 4, 8,
+            32, 262144, 10000, 67108864L, 16777216);
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         var handled = new AtomicInteger();
         var json = new JsonCodec();
-        var queue = new RedissonMessageQueueTemplate(redis, new KeySpace("global-budget-test"), json, new QueuePolicy((policy).maxAttempts(), (policy).retryDelay(), (policy).visibilityTimeout(), (policy).pollTimeout(), (policy).shutdownTimeout(), (policy).autoDeleteAfterAck(), (policy).deadLetterTtl(), (policy).streamRetention(), (policy).streamMaxLength(), (policy).retryMultiplier(), (policy).maxRetryDelay(), 1, (policy).maxBlockingReads(), (policy).readBatchSize(), 32, 262144, 10000, 67108864L, 16777216), mock(DistributedLockTemplate.class), mock(FailedMessageStore.class), activeIdentity("instance-a"), RetryClassifier.infrastructureFailures());
+        var queue = new RedissonMessageQueueTemplate(redis, new KeySpace("global-budget-test"), json,
+            new QueuePolicy((policy).maxAttempts(), (policy).retryDelay(), (policy).visibilityTimeout(),
+                (policy).pollTimeout(), (policy).shutdownTimeout(), (policy).autoDeleteAfterAck(),
+                (policy).deadLetterTtl(), (policy).streamRetention(), (policy).streamMaxLength(),
+                (policy).retryMultiplier(), (policy).maxRetryDelay(), 1, (policy).maxBlockingReads(),
+                (policy).readBatchSize(), 32, 262144, 10000, 67108864L, 16777216),
+            mock(DistributedLockTemplate.class), mock(FailedMessageStore.class), activeIdentity("instance-a"),
+            RetryClassifier.infrastructureFailures());
         try {
-            queue.subscribe(new QueueSubscription("events", QueueMode.BROADCAST, "group", 4, "", QueueOptions.defaults(), 0, "events" + ":" + "group"), message -> {
-                handled.incrementAndGet();
-                entered.countDown();
-                release.await();
-            });
+            queue.subscribe(new QueueSubscription("events", QueueMode.BROADCAST, "group", 4, "",
+                QueueOptions.defaults(), 0, "events" + ":" + "group"), message -> {
+                    handled.incrementAndGet();
+                    entered.countDown();
+                    release.await();
+                });
             String encoded = json.write(Message.create("payload", json));
             listener.get().onMessage("topic", encoded);
             assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
@@ -63,9 +73,15 @@ class SubscriptionLifecycleTest {
         var topic = mock(RTopic.class);
         when(redis.getTopic(anyString(), any(Codec.class))).thenReturn(topic);
         when(topic.addListener(eq(String.class), any(MessageListener.class))).thenReturn(7);
-        var policy = new QueuePolicy(3, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(1), Duration.ofSeconds(1), true, Duration.ofDays(1), Duration.ofDays(1), 100, 2, Duration.ofMinutes(1), 16, 4, 8, 32, 262144, 10000, 67108864L, 16777216);
-        try (var queue = new RedissonMessageQueueTemplate(redis, new KeySpace("close-test"), new JsonCodec(), policy, mock(DistributedLockTemplate.class), mock(FailedMessageStore.class), activeIdentity("instance-b"), RetryClassifier.infrastructureFailures())) {
-            var subscription = queue.subscribe(new QueueSubscription("events", QueueMode.BROADCAST, "group", 1, "", QueueOptions.defaults(), 0, "events" + ":" + "group"), message -> {});
+        var policy = new QueuePolicy(3, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(1),
+            Duration.ofSeconds(1), true, Duration.ofDays(1), Duration.ofDays(1), 100, 2, Duration.ofMinutes(1), 16, 4,
+            8, 32, 262144, 10000, 67108864L, 16777216);
+        try (var queue = new RedissonMessageQueueTemplate(redis, new KeySpace("close-test"), new JsonCodec(), policy,
+            mock(DistributedLockTemplate.class), mock(FailedMessageStore.class), activeIdentity("instance-b"),
+            RetryClassifier.infrastructureFailures())) {
+            var subscription = queue.subscribe(new QueueSubscription("events", QueueMode.BROADCAST, "group", 1, "",
+                QueueOptions.defaults(), 0, "events" + ":" + "group"), message -> {
+                });
             doThrow(new IllegalStateException("unsubscribe failed")).doNothing().when(topic).removeListener(7);
             assertThatThrownBy(subscription::close).hasRootCauseMessage("unsubscribe failed");
             subscription.close();
@@ -78,12 +94,15 @@ class SubscriptionLifecycleTest {
     @Test
     void reliableBroadcastRejectsGeneratedInstanceIdentityBeforeRedisAccess() {
         var redis = mock(RedissonClient.class);
-        var policy = new QueuePolicy(3, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(1), Duration.ofSeconds(1), true, Duration.ofDays(1), Duration.ofDays(1), 100, 2, Duration.ofMinutes(1), 16, 4, 8, 32, 262144, 10000, 67108864L, 16777216);
-        try (var queue = new RedissonMessageQueueTemplate(redis, new KeySpace("identity-test"), new JsonCodec(),
-                policy, mock(DistributedLockTemplate.class), mock(FailedMessageStore.class), new RuntimeIdentity(null), RetryClassifier.infrastructureFailures())) {
-            assertThatThrownBy(() -> queue.subscribe(QueueSubscription.concurrent(
-                    "events", QueueMode.RELIABLE_BROADCAST, "replicas", 1), message -> { }))
-                    .isInstanceOf(RdtException.class).hasMessageContaining("stable instance ID");
+        var policy = new QueuePolicy(3, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(1),
+            Duration.ofSeconds(1), true, Duration.ofDays(1), Duration.ofDays(1), 100, 2, Duration.ofMinutes(1), 16, 4,
+            8, 32, 262144, 10000, 67108864L, 16777216);
+        try (var queue = new RedissonMessageQueueTemplate(redis, new KeySpace("identity-test"), new JsonCodec(), policy,
+            mock(DistributedLockTemplate.class), mock(FailedMessageStore.class), new RuntimeIdentity(null),
+            RetryClassifier.infrastructureFailures())) {
+            assertThatThrownBy(() -> queue.subscribe(
+                QueueSubscription.concurrent("events", QueueMode.RELIABLE_BROADCAST, "replicas", 1), message -> {
+                })).isInstanceOf(RdtException.class).hasMessageContaining("stable instance ID");
         }
         verifyNoInteractions(redis);
     }

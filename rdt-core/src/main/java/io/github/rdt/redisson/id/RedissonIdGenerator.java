@@ -24,6 +24,7 @@ public final class RedissonIdGenerator implements DistributedIdGenerator {
 
     /**
      * 创建 ID 分配器。
+     *
      * @param client 共享客户端
      * @param keys 命名空间
      * @param policy 序列初始化策略
@@ -63,7 +64,8 @@ public final class RedissonIdGenerator implements DistributedIdGenerator {
                 long current = counter.get();
                 long next = Math.max(Math.addExact(current, 1), Math.max(minimum, policy.start()));
                 // Use integer CAS, not Lua arithmetic which loses precision for large Snowflake IDs.
-                if (counter.compareAndSet(current, next)) return next;
+                if (counter.compareAndSet(current, next))
+                    return next;
             }
         });
     }
@@ -73,8 +75,8 @@ public final class RedissonIdGenerator implements DistributedIdGenerator {
         RdtSupport.require(prefix != null && datePattern != null && width >= 1 && width <= 64, "Invalid ID formatting");
         String date;
         try {
-            date = datePattern.isBlank() ? "" : ZonedDateTime.now(policy.zone())
-                    .format(DateTimeFormatter.ofPattern(datePattern, Locale.ROOT));
+            date = datePattern.isBlank() ? ""
+                : ZonedDateTime.now(policy.zone()).format(DateTimeFormatter.ofPattern(datePattern, Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new RdtConfigurationException("Invalid date pattern", e);
         }

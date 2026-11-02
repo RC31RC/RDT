@@ -32,17 +32,9 @@ final class StreamBatchSubscriptionRuntime extends SubscriptionRuntime {
     private final PendingRecoveryCoordinator recovery;
     private final Supplier<RdtMetrics> metrics;
 
-    StreamBatchSubscriptionRuntime(
-            QueueSubscription spec,
-            MessageHandler handler,
-            RuntimeIdentity identity,
-            QueuePolicy policy,
-            StreamRetryIndex retryIndex,
-            StreamMessageLifecycle lifecycle,
-            QueueStreams streams,
-            ExecutionBudget budget,
-            PendingRecoveryCoordinator recovery,
-            Supplier<RdtMetrics> metrics) {
+    StreamBatchSubscriptionRuntime(QueueSubscription spec, MessageHandler handler, RuntimeIdentity identity,
+        QueuePolicy policy, StreamRetryIndex retryIndex, StreamMessageLifecycle lifecycle, QueueStreams streams,
+        ExecutionBudget budget, PendingRecoveryCoordinator recovery, Supplier<RdtMetrics> metrics) {
         this.identity = identity;
         this.policy = policy;
         this.retryIndex = retryIndex;
@@ -54,8 +46,7 @@ final class StreamBatchSubscriptionRuntime extends SubscriptionRuntime {
         tasks.add(budget.submit(() -> consumeBatched(spec, handler, active)));
     }
 
-    private void consumeBatched(
-            QueueSubscription spec, MessageHandler handler, AtomicBoolean active) {
+    private void consumeBatched(QueueSubscription spec, MessageHandler handler, AtomicBoolean active) {
         String consumer = identity.instanceId() + ":" + identity.runId() + ":" + UUID.randomUUID();
         QueuePolicy effective = policy.resolve(spec.options());
         Semaphore listenerSlots = new Semaphore(spec.concurrency(), true);
@@ -91,67 +82,46 @@ final class StreamBatchSubscriptionRuntime extends SubscriptionRuntime {
                         }
                         reserved++;
                     }
-                    if (!identity.acceptingNewWork()) continue;
+                    if (!identity.acceptingNewWork())
+                        continue;
                     boolean leader = recovery.isLeader();
                     Map<StreamMessageId, Map<String, String>> batch =
-                            leader
-                                    ? retryIndex.claimRetries(
-                                            spec, effective, target, consumer, reserved)
-                                    : Map.of();
+                        leader ? retryIndex.claimRetries(spec, effective, target, consumer, reserved) : Map.of();
                     if (leader && batch.isEmpty() && System.nanoTime() >= nextRecovery) {
                         List<String> recovered =
-                                retryIndex.recoverablePending(
-                                        spec, effective, target, cursor, reserved);
+                            retryIndex.recoverablePending(spec, effective, target, cursor, reserved);
                         cursor = recovered.removeFirst();
                         if (!recovered.isEmpty()) {
-                            batch =
-                                    target.claim(
-                                            spec.group(),
-                                            consumer,
-                                            effective.visibilityTimeout().toMillis(),
-                                            TimeUnit.MILLISECONDS,
-                                            recovered.stream()
-                                                    .map(retryIndex::streamId)
-                                                    .toArray(StreamMessageId[]::new));
+                            batch = target.claim(spec.group(), consumer, effective.visibilityTimeout().toMillis(),
+                                TimeUnit.MILLISECONDS,
+                                recovered.stream().map(retryIndex::streamId).toArray(StreamMessageId[]::new));
                             batch.forEach(
-                                    (id, ignored) ->
-                                            metrics.get()
-                                                    .increment(
-                                                            "rdt.queue.reclaim",
-                                                            "result",
-                                                            "claimed"));
+                                (id, ignored) -> metrics.get().increment("rdt.queue.reclaim", "result", "claimed"));
                         }
-                        nextRecovery = recovered.isEmpty() && cursor.equals("-")
-                                ? System.nanoTime()
-                                        + Math.max(
-                                                TimeUnit.MILLISECONDS.toNanos(100),
-                                                effective.visibilityTimeout().toNanos() / 2) : 0;
+                        nextRecovery = recovered.isEmpty() && cursor.equals("-") ? System.nanoTime()
+                            + Math.max(TimeUnit.MILLISECONDS.toNanos(100), effective.visibilityTimeout().toNanos() / 2)
+                            : 0;
                     }
-                    if (leader && batch.isEmpty() && !cursor.equals("-")) continue;
+                    if (leader && batch.isEmpty() && !cursor.equals("-"))
+                        continue;
                     if (batch.isEmpty()) {
                         int count = reserved;
                         batch = target.readGroup(spec.group(), consumer,
-                                StreamReadGroupArgs.neverDelivered().count(count).timeout(effective.pollTimeout()));
+                            StreamReadGroupArgs.neverDelivered().count(count).timeout(effective.pollTimeout()));
                     }
                     budget.releaseRead();
                     readPermit = false;
                     for (var entry : batch.entrySet()) {
-                        if (!active.get() || !identity.accepting()) break;
-                        budget.enqueue(
-                                () -> {
-                                    if (active.get() && identity.accepting())
-                                        lifecycle.processStream(
-                                                spec,
-                                                effective,
-                                                target,
-                                                entry.getKey(),
-                                                entry.getValue(),
-                                                handler);
-                                },
-                                () -> {
-                                    listenerSlots.release();
-                                    budget.release(1);
-                                });
+                        if (!active.get() || !identity.accepting())
+                            break;
+                        budget.enqueue(() -> {
+                            if (active.get() && identity.accepting())
+                                lifecycle.processStream(spec, effective, target, entry.getKey(), entry.getValue(),
+                                    handler);
+                        }, () -> {
+                            listenerSlots.release();
+                            budget.release(1);
+                        });
                         reserved--;
                     }
                 } catch (InterruptedException interrupted) {
@@ -159,16 +129,14 @@ final class StreamBatchSubscriptionRuntime extends SubscriptionRuntime {
                 } catch (RuntimeException failure) {
                     if (active.get())
                         log.warn("Stream fetch failed topic={}", spec.destination(), failure);
-                    pause(
-                            effective.retryDelay().isZero()
-                                    ? Duration.ofSeconds(1)
-                                    : effective.retryDelay());
+                    pause(effective.retryDelay().isZero() ? Duration.ofSeconds(1) : effective.retryDelay());
                 } catch (Exception failure) {
                     if (active.get())
                         log.warn("Stream read failed topic={}", spec.destination(), failure);
                     pause(Duration.ofSeconds(1));
                 } finally {
-                    if (readPermit) budget.releaseRead();
+                    if (readPermit)
+                        budget.releaseRead();
                     if (reserved > 0) {
                         budget.release(reserved);
                         listenerSlots.release(reserved);

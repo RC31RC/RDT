@@ -17,8 +17,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class QueueResourceContractTest {
     private QueuePolicy policy(int maxMessage, int localBytes) {
         return new QueuePolicy(3, Duration.ofMillis(10), Duration.ofSeconds(30), Duration.ofSeconds(1),
-                Duration.ofSeconds(1), true, Duration.ofDays(1), Duration.ofDays(7), 10000,
-                1, Duration.ofHours(1), 4, 2, 8, 32, maxMessage, 10000, 1048576, localBytes);
+            Duration.ofSeconds(1), true, Duration.ofDays(1), Duration.ofDays(7), 10000, 1, Duration.ofHours(1), 4, 2, 8,
+            32, maxMessage, 10000, 1048576, localBytes);
     }
 
     @Test
@@ -47,9 +47,8 @@ class QueueResourceContractTest {
     void oversizedUtf8EnvelopeIsRejectedBeforeRedisIo() {
         var client = mock(RedissonClient.class);
         var admission = new QueueAdmission(client, new KeySpace("contract"), policy(4, 2048));
-        assertThatThrownBy(() -> admission.accept("events", "\u00e9\u00e9\u00e9", null))
-                .isInstanceOfSatisfying(RdtException.class,
-                        error -> assertThat(error.code()).isEqualTo(RdtErrorCode.MESSAGE_TOO_LARGE));
+        assertThatThrownBy(() -> admission.accept("events", "\u00e9\u00e9\u00e9", null)).isInstanceOfSatisfying(
+            RdtException.class, error -> assertThat(error.code()).isEqualTo(RdtErrorCode.MESSAGE_TOO_LARGE));
         verifyNoInteractions(client);
     }
 
@@ -58,14 +57,16 @@ class QueueResourceContractTest {
         var keys = new KeySpace("app");
         String destination = "events:tenant";
         String tag = tag(keys.key("stream", destination));
-        for (String feature : new String[]{"message-delay", "queue-capacity", "queue-capacity-state", "queue-limits", "stream-cleanup-cursor"})
+        for (String feature : new String[] {"message-delay", "queue-capacity", "queue-capacity-state", "queue-limits",
+            "stream-cleanup-cursor"})
             assertThat(tag(keys.key(feature, destination))).isEqualTo(tag);
-        for (String feature : new String[]{"message-retries", "message-failures", "message-retry-at", "message-first-failure"})
+        for (String feature : new String[] {"message-retries", "message-failures", "message-retry-at",
+            "message-first-failure"})
             assertThat(tag(keys.key(feature, RdtSupport.component(destination) + ":group:1-0"))).isEqualTo(tag);
         assertThat(tag(keys.key("management-index", "dead-letters")))
-                .isEqualTo(tag(keys.key("management-expiry", "dead-letters")));
+            .isEqualTo(tag(keys.key("management-expiry", "dead-letters")));
         assertThat(tag(keys.key("schedule-results", "job")))
-                .isEqualTo(tag(keys.key("management-expiry", "attempts:job")));
+            .isEqualTo(tag(keys.key("management-expiry", "attempts:job")));
     }
 
     private String tag(String key) {

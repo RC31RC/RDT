@@ -7,7 +7,7 @@ import org.springframework.transaction.TransactionException;
 
 /** Translate JDBC/transaction infrastructure only; never translate business callback failures. */
 final class JdbcSupport {
-    private JdbcSupport() { }
+    private JdbcSupport() {}
 
     static <T> T execute(String operation, Supplier<T> work) {
         try {
@@ -18,6 +18,9 @@ final class JdbcSupport {
     }
 
     static void execute(String operation, Runnable work) {
-        execute(operation, () -> { work.run(); return null; });
+        execute(operation, () -> {
+            work.run();
+            return null;
+        });
     }
 }

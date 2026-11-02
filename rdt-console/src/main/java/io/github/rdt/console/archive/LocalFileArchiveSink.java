@@ -45,7 +45,8 @@ public final class LocalFileArchiveSink implements RdtArchiveSink {
             temporary = staging;
             writer = openWriter(staging);
         } catch (IOException failure) {
-            if (staging != null) deleteAfterFailure(staging, failure);
+            if (staging != null)
+                deleteAfterFailure(staging, failure);
             throw new RdtArchiveException("Cannot open local archive", failure);
         }
     }
@@ -53,17 +54,23 @@ public final class LocalFileArchiveSink implements RdtArchiveSink {
     private static BufferedWriter openWriter(Path path) throws IOException {
         OutputStream output = Files.newOutputStream(path);
         try {
-            return new BufferedWriter(new OutputStreamWriter(
-                    new GZIPOutputStream(output, 64 * 1024, true), StandardCharsets.UTF_8), 64 * 1024);
+            return new BufferedWriter(
+                new OutputStreamWriter(new GZIPOutputStream(output, 64 * 1024, true), StandardCharsets.UTF_8),
+                64 * 1024);
         } catch (IOException | RuntimeException failure) {
-            try { output.close(); } catch (IOException closeFailure) { failure.addSuppressed(closeFailure); }
+            try {
+                output.close();
+            } catch (IOException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
             throw failure;
         }
     }
 
     @Override
     public void write(List<String> jsonRecords) {
-        if (closed) throw new RdtArchiveException("Archive sink is closed");
+        if (closed)
+            throw new RdtArchiveException("Archive sink is closed");
         try {
             for (String record : jsonRecords) {
                 // Raw newlines would split one JSON document into several JSONL records.
@@ -85,7 +92,8 @@ public final class LocalFileArchiveSink implements RdtArchiveSink {
 
     @Override
     public void close() {
-        if (closed) return;
+        if (closed)
+            return;
         closed = true;
         try {
             writer.close();
@@ -106,22 +114,41 @@ public final class LocalFileArchiveSink implements RdtArchiveSink {
 
     @Override
     public void abort() {
-        if (closed) return;
+        if (closed)
+            return;
         closed = true;
         IOException failure = null;
-        try { writer.close(); } catch (IOException error) { failure = error; }
-        try { Files.deleteIfExists(temporary); } catch (IOException error) {
-            if (failure == null) failure = error; else failure.addSuppressed(error);
+        try {
+            writer.close();
+        } catch (IOException error) {
+            failure = error;
         }
-        if (failure != null) throw new RdtArchiveException("Cannot discard local archive", failure);
+        try {
+            Files.deleteIfExists(temporary);
+        } catch (IOException error) {
+            if (failure == null)
+                failure = error;
+            else
+                failure.addSuppressed(error);
+        }
+        if (failure != null)
+            throw new RdtArchiveException("Cannot discard local archive", failure);
     }
 
     private void abortAfterFailure(Throwable failure) {
-        try { abort(); } catch (RuntimeException abortFailure) { failure.addSuppressed(abortFailure); }
+        try {
+            abort();
+        } catch (RuntimeException abortFailure) {
+            failure.addSuppressed(abortFailure);
+        }
     }
 
     private static void deleteAfterFailure(Path path, IOException failure) {
-        try { Files.deleteIfExists(path); } catch (IOException deleteFailure) { failure.addSuppressed(deleteFailure); }
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException deleteFailure) {
+            failure.addSuppressed(deleteFailure);
+        }
     }
 
     private void cleanExpiredFiles() {
@@ -129,9 +156,11 @@ public final class LocalFileArchiveSink implements RdtArchiveSink {
         try (var paths = Files.newDirectoryStream(target.getParent(), "rdt-archive-*.jsonl.gz")) {
             for (Path path : paths) {
                 Matcher matcher = ARCHIVE_NAME.matcher(path.getFileName().toString());
-                if (!matcher.matches() || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) continue;
+                if (!matcher.matches() || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    continue;
                 try {
-                    if (LocalDate.parse(matcher.group(1)).isBefore(cutoff)) Files.delete(path);
+                    if (LocalDate.parse(matcher.group(1)).isBefore(cutoff))
+                        Files.delete(path);
                 } catch (DateTimeParseException ignored) {
                     // Unrecognized names are outside this archive's retention policy.
                 } catch (IOException error) {

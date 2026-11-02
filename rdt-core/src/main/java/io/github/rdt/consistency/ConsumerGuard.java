@@ -7,6 +7,8 @@ import io.github.rdt.queue.MessageHandler;
 public interface ConsumerGuard {
     /** Whether this guard atomically commits Inbox identity with synchronous business writes. */
     boolean supportsInbox();
+
     boolean enabledByDefault();
+
     void consume(InboxScope scope, Message message, MessageHandler business) throws Exception;
 }

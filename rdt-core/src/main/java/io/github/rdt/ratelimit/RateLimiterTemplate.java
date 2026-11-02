@@ -8,6 +8,7 @@ import java.util.Optional;
 public interface RateLimiterTemplate {
     /**
      * 尝试消耗一个速率许可，不重置已有状态。
+     *
      * @param key 逻辑限流键
      * @param permits 速率配额
      * @param interval 速率统计窗口
@@ -18,6 +19,7 @@ public interface RateLimiterTemplate {
 
     /**
      * 通过 RPermitExpirableSemaphore 获取并发租约。
+     *
      * @param key 逻辑限流键
      * @param capacity 同时有效的租约数量上限
      * @param wait 最长等待时间

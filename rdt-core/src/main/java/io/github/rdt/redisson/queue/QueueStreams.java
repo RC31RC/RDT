@@ -34,36 +34,26 @@ final class QueueStreams {
     }
 
     void registerPartitions(String topic, int partitions) {
-        RdtSupport.require(
-                partitions >= 1 && partitions <= 128,
-                "Ordered partition count must be between 1 and 128");
+        RdtSupport.require(partitions >= 1 && partitions <= 128, "Ordered partition count must be between 1 and 128");
         Integer known = orderedTopics.get(topic);
         if (known != null) {
-            RdtSupport.require(
-                    known == partitions, "Conflicting ordered partition count for " + topic);
+            RdtSupport.require(known == partitions, "Conflicting ordered partition count for " + topic);
             return;
         }
-        var metadata =
-                client.<String, String>getMap(
-                        keys.key("queue-metadata", topic), StringCodec.INSTANCE);
+        var metadata = client.<String, String>getMap(keys.key("queue-metadata", topic), StringCodec.INSTANCE);
         metadata.fastPutIfAbsent("orderedPartitions", Integer.toString(partitions));
-        RdtSupport.require(
-                Integer.toString(partitions).equals(metadata.get("orderedPartitions")),
-                "Conflicting ordered partition count for " + topic);
+        RdtSupport.require(Integer.toString(partitions).equals(metadata.get("orderedPartitions")),
+            "Conflicting ordered partition count for " + topic);
         orderedTopics.put(topic, partitions);
     }
 
     void createGroup(QueueSubscription spec) {
         try {
             stream(spec.destination())
-                    .createGroup(
-                            StreamCreateGroupArgs.name(spec.group())
-                                    .id(StreamMessageId.ALL)
-                                    .makeStream());
+                .createGroup(StreamCreateGroupArgs.name(spec.group()).id(StreamMessageId.ALL).makeStream());
         } catch (RedisException e) {
             if (e.getMessage() == null || !e.getMessage().contains("BUSYGROUP")) {
-                throw new RdtRedisException(
-                        RdtErrorCode.REDIS_OPERATION, "Cannot create consumer group", e);
+                throw new RdtRedisException(RdtErrorCode.REDIS_OPERATION, "Cannot create consumer group", e);
             }
         }
     }

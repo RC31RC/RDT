@@ -13,8 +13,12 @@ public record RdtComponentProperties(Map<String, Listener> listeners, Map<String
         listeners = listeners == null ? Map.of() : Map.copyOf(listeners);
         jobs = jobs == null ? Map.of() : Map.copyOf(jobs);
     }
-    public record Listener(Integer concurrency, Integer maxAttempts, Duration retryDelay,
-                           Duration visibilityTimeout, Duration pollTimeout, Integer orderedPartitions) { }
-    public record Job(Integer maxAttempts, Duration retryDelay, ScheduleFailureMode failureMode,
-                      JobRoute route, String targetInstanceId) { }
+
+    public record Listener(Integer concurrency, Integer maxAttempts, Duration retryDelay, Duration visibilityTimeout,
+        Duration pollTimeout, Integer orderedPartitions) {
+    }
+
+    public record Job(Integer maxAttempts, Duration retryDelay, ScheduleFailureMode failureMode, JobRoute route,
+        String targetInstanceId) {
+    }
 }

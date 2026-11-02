@@ -40,3 +40,11 @@ rdt-console/web/playwright-report/
 !rdt-core/src/test/java/io/github/rdt/management/RedissonManagementQueryServiceTest.java
 !rdt-console/src/test/java/io/github/rdt/console/archive/RedisArchiveReaderIT.java
 !rdt-console/src/test/java/io/github/rdt/console/archive/RedisArchiveClusterIT.java
+
+# Lock API contracts and Redis lock integration checks are part of this change.
+!AGENTS.md
+!rdt-core/src/test/java/io/github/rdt/lock/DefaultLockManagerTest.java
+!rdt-core/src/test/java/io/github/rdt/redisson/lock/LockManagerIT.java
+!rdt-spring-boot-starter/src/test/java/io/github/rdt/spring/LockTransactionBoundaryTest.java
+!rdt-spring-boot-starter/src/test/java/io/github/rdt/spring/AspectAndJdbcTest.java
+!rdt-spring-boot-starter/src/test/java/io/github/rdt/spring/AdmissionRollbackIT.java

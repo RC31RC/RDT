@@ -38,7 +38,8 @@ public final class RdtClientRouter {
 
     private String singleClient(Map<String, RedissonClient> clients) {
         if (clients.size() != 1) {
-            throw new RdtConfigurationException("Provide the runtime Redis role as rdtRuntimeRedis; configure rdt.redis.runtime.config/file or declare that bean");
+            throw new RdtConfigurationException(
+                "Provide the runtime Redis role as rdtRuntimeRedis; configure rdt.redis.runtime.config/file or declare that bean");
         }
         return clients.keySet().iterator().next();
     }

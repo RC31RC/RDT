@@ -8,7 +8,9 @@ import java.lang.annotation.*;
 public @interface RdtId {
     /** SpEL sequence name. */
     String sequence();
+
     IdMode mode() default IdMode.ATOMIC;
+
     /** Optional inclusive minimum, evaluated with #result; only supported by ATOMIC. */
     String minimum() default "";
 }

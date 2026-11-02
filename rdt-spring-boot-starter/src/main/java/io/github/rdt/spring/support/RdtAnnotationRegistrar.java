@@ -72,7 +72,11 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
     private final JsonCodec json;
     private final RdtProperties properties;
     private final RdtComponentProperties components;
-    private static <T> T override(T external, T declared) { return external == null ? declared : external; }
+
+    private static <T> T override(T external, T declared) {
+        return external == null ? declared : external;
+    }
+
     private final List<Subscription> registrations = new ArrayList<>();
     private volatile boolean running;
     private Supplier<BooleanSupplier> executionGuard = () -> () -> true;
@@ -82,10 +86,9 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
         this.executionGuard = executionGuard;
     }
 
-
     public RdtAnnotationRegistrar(ConfigurableListableBeanFactory beans, ObjectProvider<MessageQueueTemplate> queues,
-                                  ObjectProvider<ScheduledTaskTemplate> scheduler, RdtMethodSupport methods,
-                                  JsonCodec json, RdtProperties properties, RdtComponentProperties components) {
+        ObjectProvider<ScheduledTaskTemplate> scheduler, RdtMethodSupport methods, JsonCodec json,
+        RdtProperties properties, RdtComponentProperties components) {
         this.beans = beans;
         this.queues = queues;
         this.scheduler = scheduler;
@@ -110,9 +113,9 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
                 if (type == null || !beans.isSingleton(name)) {
                     continue;
                 }
-                Map<Method, Boolean> selected = MethodIntrospector.selectMethods(type,
-                        (MethodIntrospector.MetadataLookup<Boolean>) method ->
-                                annotatedMethod(method) ? Boolean.TRUE : null);
+                Map<Method, Boolean> selected =
+                    MethodIntrospector.selectMethods(type, (MethodIntrospector.MetadataLookup<
+                        Boolean>)method -> annotatedMethod(method) ? Boolean.TRUE : null);
                 boolean scheduledType = annotation(type, RdtScheduled.class) != null;
                 boolean queueType = annotation(type, RdtQueueListener.class) != null;
                 if (selected.isEmpty() && !scheduledType && !queueType) {
@@ -121,28 +124,30 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
                 Object bean = beans.getBean(name);
                 Class<?> actual = AopProxyUtils.ultimateTargetClass(bean);
                 RdtSupport.require(!Modifier.isFinal(actual.getModifiers()),
-                        "RDT bean classes must not be final: " + actual);
-                Map<Method, Boolean> actualMethods = MethodIntrospector.selectMethods(actual,
-                        (MethodIntrospector.MetadataLookup<Boolean>) method ->
-                                annotatedMethod(method) ? Boolean.TRUE : null);
+                    "RDT bean classes must not be final: " + actual);
+                Map<Method, Boolean> actualMethods =
+                    MethodIntrospector.selectMethods(actual, (MethodIntrospector.MetadataLookup<
+                        Boolean>)method -> annotatedMethod(method) ? Boolean.TRUE : null);
                 for (Method method : actualMethods.keySet()) {
                     methods.validate(method);
-                    RdtSupport.require(!AnnotatedElementUtils.hasAnnotation(method, Async.class)
-                                    && !AnnotatedElementUtils.hasAnnotation(actual, Async.class),
-                            "@Async cannot be combined with synchronous RDT semantics: " + method);
+                    RdtSupport.require(
+                        !AnnotatedElementUtils.hasAnnotation(method, Async.class)
+                            && !AnnotatedElementUtils.hasAnnotation(actual, Async.class),
+                        "@Async cannot be combined with synchronous RDT semantics: " + method);
                     int caching = (annotation(method, RdtCacheable.class) != null ? 1 : 0)
-                            + (annotation(method, RdtCachePut.class) != null ? 1 : 0)
-                            + (annotation(method, RdtCacheEvict.class) != null ? 1 : 0);
+                        + (annotation(method, RdtCachePut.class) != null ? 1 : 0)
+                        + (annotation(method, RdtCacheEvict.class) != null ? 1 : 0);
                     RdtSupport.require(caching <= 1, "Use one RDT cache annotation per method: " + method);
-                    RdtSupport.require((annotation(method, RdtCacheable.class) == null
+                    RdtSupport.require(
+                        (annotation(method, RdtCacheable.class) == null
                             && annotation(method, RdtCachePut.class) == null) || method.getReturnType() != void.class,
-                            "Cacheable/CachePut cannot target void methods");
+                        "Cacheable/CachePut cannot target void methods");
                     methodCandidates.add(new MethodCandidate(bean, method));
                 }
                 RdtScheduled scheduled = annotation(actual, RdtScheduled.class);
                 RdtQueueListener queue = annotation(actual, RdtQueueListener.class);
                 RdtSupport.require(scheduled == null || queue == null,
-                        "A bean cannot be both an RDT scheduled task and message consumer: " + actual.getName());
+                    "A bean cannot be both an RDT scheduled task and message consumer: " + actual.getName());
                 if (scheduled != null) {
                     scheduledCandidates.add(scheduledCandidate(bean, actual, scheduled));
                 }
@@ -161,7 +166,8 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
             try {
                 stop();
             } catch (RuntimeException cleanupFailure) {
-                if (cleanupFailure != exception) exception.addSuppressed(cleanupFailure);
+                if (cleanupFailure != exception)
+                    exception.addSuppressed(cleanupFailure);
             }
             throw exception;
         }
@@ -172,42 +178,42 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
         RdtId id = annotation(method, RdtId.class);
         if (id != null) {
             RdtSupport.require(method.getReturnType() == long.class || method.getReturnType() == Long.class,
-                    "@RdtId methods must return long or Long: " + method);
+                "@RdtId methods must return long or Long: " + method);
             RdtSupport.require(id.minimum().isBlank() || id.mode() == IdMode.ATOMIC,
-                    "@RdtId minimum requires ATOMIC mode: " + method);
-            RdtSupport.require(annotation(method, RdtCacheable.class) == null
-                            && annotation(method, RdtCachePut.class) == null,
-                    "@RdtId cannot be combined with cached return values: " + method);
+                "@RdtId minimum requires ATOMIC mode: " + method);
+            RdtSupport.require(
+                annotation(method, RdtCacheable.class) == null && annotation(method, RdtCachePut.class) == null,
+                "@RdtId cannot be combined with cached return values: " + method);
         }
 
     }
 
     private ScheduledCandidate scheduledCandidate(Object bean, Class<?> actual, RdtScheduled scheduled) {
         RdtSupport.require(RdtScheduledTask.class.isAssignableFrom(actual),
-                "@RdtScheduled beans must implement RdtScheduledTask: " + actual.getName());
+            "@RdtScheduled beans must implement RdtScheduledTask: " + actual.getName());
         Method method = implementationMethod(actual, RdtScheduledTask.class, "execute");
-        TaskDescriptor descriptor = ((RdtScheduledTask) bean).descriptor();
+        TaskDescriptor descriptor = ((RdtScheduledTask)bean).descriptor();
         RdtSupport.require(descriptor != null, "Scheduled task descriptor is required: " + actual.getName());
         return new ScheduledCandidate(bean, actual, method, scheduled, descriptor);
     }
 
     private QueueCandidate queueCandidate(Object bean, Class<?> actual, RdtQueueListener queue) {
         RdtSupport.require(RdtMessageConsumer.class.isAssignableFrom(actual),
-                "@RdtQueueListener beans must implement RdtMessageConsumer<T>: " + actual.getName());
+            "@RdtQueueListener beans must implement RdtMessageConsumer<T>: " + actual.getName());
         ResolvableType consumerType = ResolvableType.forClass(actual).as(RdtMessageConsumer.class);
         ResolvableType payloadType = consumerType.getGeneric(0);
         RdtSupport.require(payloadType != ResolvableType.NONE && payloadType.resolve() != null,
-                "RdtMessageConsumer payload type must be concrete: " + actual.getName());
+            "RdtMessageConsumer payload type must be concrete: " + actual.getName());
         Method method = implementationMethod(actual, RdtMessageConsumer.class, "consume", MessageDescriptor.class);
         Class<?> payloadClass = payloadType.resolve();
         RdtSupport.require(MessageDescriptor.class.isAssignableFrom(payloadClass),
-                "RdtMessageConsumer<T> requires a concrete MessageDescriptor subtype: " + actual.getName());
+            "RdtMessageConsumer<T> requires a concrete MessageDescriptor subtype: " + actual.getName());
         var constructor = ClassUtils.getConstructorIfAvailable(payloadClass);
         RdtSupport.require(constructor != null && !Modifier.isAbstract(payloadClass.getModifiers()),
-                "MessageDescriptor must be concrete with a public no-argument constructor: " + payloadClass.getName());
-        MessageDescriptor<?> descriptor = (MessageDescriptor<?>) BeanUtils.instantiateClass(constructor);
+            "MessageDescriptor must be concrete with a public no-argument constructor: " + payloadClass.getName());
+        MessageDescriptor<?> descriptor = (MessageDescriptor<?>)BeanUtils.instantiateClass(constructor);
         RdtSupport.require(resolve(queue.topic()).equals(descriptor.topic()),
-                "Listener topic must match its message descriptor: " + actual.getName());
+            "Listener topic must match its message descriptor: " + actual.getName());
         ConsumerDescriptor consumer = descriptor.consumer(resolve(queue.group()));
         RdtSupport.require(consumer != null, "Consumer descriptor is required: " + actual.getName());
         return new QueueCandidate(bean, actual, method, queue, payloadType.getType(), descriptor, consumer);
@@ -229,7 +235,7 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
         properties.schedule().policy().resolve(scheduleOptions(candidate));
         RdtSupport.component(resolve(candidate.annotation().id()));
         RdtSupport.require(resolve(candidate.descriptor().displayName()).strip().length() <= 200,
-                "Task display name must not exceed 200 characters");
+            "Task display name must not exceed 200 characters");
     }
 
     private void validateQueueRegistration(QueueCandidate candidate) {
@@ -239,23 +245,26 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
         properties.queue().policy().resolve(spec.options());
         ConsumerGuard guard = beans.getBeanProvider(ConsumerGuard.class).getIfAvailable();
         boolean inbox = candidate.consumer().inbox() == InboxMode.ENABLED
-                || candidate.consumer().inbox() == InboxMode.INHERIT && guard != null && guard.enabledByDefault();
+            || candidate.consumer().inbox() == InboxMode.INHERIT && guard != null && guard.enabledByDefault();
         if (inbox && (guard == null || !guard.supportsInbox())) {
-            throw new RdtConfigurationException("inbox=ENABLED requires rdt-consistency-jdbc-starter, rdt.consistency.enabled=true and an Inbox-capable ConsumerGuard: " + candidate.actual().getName());
+            throw new RdtConfigurationException(
+                "inbox=ENABLED requires rdt-consistency-jdbc-starter, rdt.consistency.enabled=true and an Inbox-capable ConsumerGuard: "
+                    + candidate.actual().getName());
         }
         if (inbox && spec.mode() == QueueMode.BROADCAST) {
             throw new RdtConfigurationException("Inbox requires a durable queue mode, not BROADCAST");
         }
         if (inbox && spec.mode() == QueueMode.RELIABLE_BROADCAST) {
             RdtSupport.require(properties.instanceId() != null && !properties.instanceId().isBlank(),
-                    "Reliable broadcast Inbox requires a stable rdt.instance-id");
+                "Reliable broadcast Inbox requires a stable rdt.instance-id");
         }
     }
 
     private void rejectAsync(Class<?> actual, Method method) {
-        RdtSupport.require(!AnnotatedElementUtils.hasAnnotation(method, Async.class)
-                        && !AnnotatedElementUtils.hasAnnotation(actual, Async.class),
-                "@Async cannot be combined with synchronous RDT semantics: " + method);
+        RdtSupport.require(
+            !AnnotatedElementUtils.hasAnnotation(method, Async.class)
+                && !AnnotatedElementUtils.hasAnnotation(actual, Async.class),
+            "@Async cannot be combined with synchronous RDT semantics: " + method);
     }
 
     private void register(QueueCandidate candidate) {
@@ -265,16 +274,18 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
             QueueSubscription spec = queueSubscription(candidate);
             ConsumerGuard guard = beans.getBeanProvider(ConsumerGuard.class).getIfAvailable();
             boolean inbox = candidate.consumer().inbox() == InboxMode.ENABLED
-                    || candidate.consumer().inbox() == InboxMode.INHERIT && guard != null && guard.enabledByDefault();
+                || candidate.consumer().inbox() == InboxMode.INHERIT && guard != null && guard.enabledByDefault();
             String group = spec.effectiveGroup(properties.instanceId());
             BooleanSupplier ownership = executionGuard.get();
             ExecutionGeneration current = generation;
             registrations.add(transport.subscribe(spec, message -> current.execute(ownership, () -> {
                 MessageDescriptor<?> argument = json.read(message.payload(), candidate.payloadType());
                 argument.restoreMetadata(message);
-                if (inbox) guard.consume(new InboxScope(properties.namespace(), message.id(), group), message,
+                if (inbox)
+                    guard.consume(new InboxScope(properties.namespace(), message.id(), group), message,
                         ignored -> consume(candidate.bean(), argument));
-                else consume(candidate.bean(), argument);
+                else
+                    consume(candidate.bean(), argument);
                 return null;
             })));
         }
@@ -291,25 +302,26 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
             BooleanSupplier ownership = executionGuard.get();
             ExecutionGeneration current = generation;
             registrations.add(template.register(id, displayName, cadence, options,
-                    () -> current.execute(ownership, () -> execute(candidate.bean()))));
+                () -> current.execute(ownership, () -> execute(candidate.bean()))));
         }
     }
 
     private Object execute(Object bean) throws Exception {
-        ((RdtScheduledTask) bean).execute();
+        ((RdtScheduledTask)bean).execute();
         return null;
     }
 
     @SuppressWarnings("unchecked")
     private void consume(Object bean, Object payload) throws Exception {
-        ((RdtMessageConsumer<MessageDescriptor<?>>) bean).consume((MessageDescriptor<?>) payload);
+        ((RdtMessageConsumer<MessageDescriptor<?>>)bean).consume((MessageDescriptor<?>)payload);
     }
 
     private ScheduleSpec schedule(TaskDescriptor descriptor) {
         ScheduleSpec cadence = descriptor.schedule();
         RdtSupport.require(cadence != null, "Task cadence is required");
         if (cadence instanceof ScheduleSpec.Cron cron) {
-            RdtSupport.require(CronExpression.isValidExpression(cron.expression()), "Invalid cron expression: " + cron.expression());
+            RdtSupport.require(CronExpression.isValidExpression(cron.expression()),
+                "Invalid cron expression: " + cron.expression());
         }
         return cadence;
     }
@@ -328,33 +340,36 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
             concurrency = override(external.concurrency(), concurrency);
             partitions = override(external.orderedPartitions(), partitions);
             options = new QueueOptions(override(external.maxAttempts(), options.maxAttempts()),
-                    override(external.retryDelay(), options.retryDelay()), options.retryMultiplier(), options.maxRetryDelay(),
-                    override(external.visibilityTimeout(), options.visibilityTimeout()),
-                    override(external.pollTimeout(), options.pollTimeout()), options.autoDeleteAfterAck(), options.deadLetterTtl());
+                override(external.retryDelay(), options.retryDelay()), options.retryMultiplier(),
+                options.maxRetryDelay(), override(external.visibilityTimeout(), options.visibilityTimeout()),
+                override(external.pollTimeout(), options.pollTimeout()), options.autoDeleteAfterAck(),
+                options.deadLetterTtl());
         }
         return new QueueSubscription(topic, candidate.descriptor().mode(), group, concurrency,
-                resolve(descriptor.displayName()), options, partitions, listenerId);
+            resolve(descriptor.displayName()), options, partitions, listenerId);
     }
 
     private ScheduleOptions scheduleOptions(ScheduledCandidate candidate) {
         ScheduleOptions declared = candidate.descriptor().options();
         RdtScheduled annotation = candidate.annotation();
-        ScheduleOptions policy = new ScheduleOptions(declared.maxAttempts(), declared.retryDelay(), declared.retryMultiplier(),
-                declared.maxRetryDelay(), declared.resultTtl(), declared.definitionChangePolicy(), declared.misfirePolicy(),
-                declared.misfireThreshold(), annotation.failureMode(), annotation.route(), declared.targetInstanceId());
+        ScheduleOptions policy = new ScheduleOptions(declared.maxAttempts(), declared.retryDelay(),
+            declared.retryMultiplier(), declared.maxRetryDelay(), declared.resultTtl(),
+            declared.definitionChangePolicy(), declared.misfirePolicy(), declared.misfireThreshold(),
+            annotation.failureMode(), annotation.route(), declared.targetInstanceId());
         RdtComponentProperties.Job external = components.jobs().get(resolve(annotation.id()));
-        if (external == null) return policy;
+        if (external == null)
+            return policy;
         return new ScheduleOptions(override(external.maxAttempts(), policy.maxAttempts()),
-                override(external.retryDelay(), policy.retryDelay()), policy.retryMultiplier(), policy.maxRetryDelay(),
-                policy.resultTtl(), policy.definitionChangePolicy(), policy.misfirePolicy(), policy.misfireThreshold(),
-                override(external.failureMode(), policy.failureMode()), override(external.route(), policy.route()),
-                override(external.targetInstanceId(), policy.targetInstanceId()));
+            override(external.retryDelay(), policy.retryDelay()), policy.retryMultiplier(), policy.maxRetryDelay(),
+            policy.resultTtl(), policy.definitionChangePolicy(), policy.misfirePolicy(), policy.misfireThreshold(),
+            override(external.failureMode(), policy.failureMode()), override(external.route(), policy.route()),
+            override(external.targetInstanceId(), policy.targetInstanceId()));
     }
 
     private boolean annotatedMethod(Method method) {
         return annotation(method, RdtLock.class) != null || annotation(method, RdtRateLimit.class) != null
-                || annotation(method, RdtCacheable.class) != null || annotation(method, RdtCachePut.class) != null
-                || annotation(method, RdtCacheEvict.class) != null || annotation(method, RdtId.class) != null;
+            || annotation(method, RdtCacheable.class) != null || annotation(method, RdtCachePut.class) != null
+            || annotation(method, RdtCacheEvict.class) != null || annotation(method, RdtId.class) != null;
     }
 
     private <A extends Annotation> A annotation(Method method, Class<A> type) {
@@ -376,7 +391,7 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
         generation.revoke();
         registrations.forEach(Subscription::close);
         Duration timeout = properties.queue().shutdownTimeout().compareTo(properties.schedule().shutdownTimeout()) >= 0
-                ? properties.queue().shutdownTimeout() : properties.schedule().shutdownTimeout();
+            ? properties.queue().shutdownTimeout() : properties.schedule().shutdownTimeout();
         generation.awaitStopped(timeout);
         registrations.clear();
         running = false;
@@ -423,7 +438,8 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
             long deadline = System.nanoTime() + timeout.toNanos();
             while (!executing.isEmpty()) {
                 long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) throw new RdtConfigurationException("Previous RDT callbacks have not stopped; recovery must wait");
+                if (remaining <= 0)
+                    throw new RdtConfigurationException("Previous RDT callbacks have not stopped; recovery must wait");
                 try {
                     TimeUnit.NANOSECONDS.timedWait(this, remaining);
                 } catch (InterruptedException exception) {
@@ -434,10 +450,14 @@ public final class RdtAnnotationRegistrar implements SmartLifecycle {
         }
     }
 
-    private record MethodCandidate(Object bean, Method method) { }
+    private record MethodCandidate(Object bean, Method method) {
+    }
 
-    private record ScheduledCandidate(Object bean, Class<?> actual, Method method, RdtScheduled annotation, TaskDescriptor descriptor) { }
+    private record ScheduledCandidate(Object bean, Class<?> actual, Method method, RdtScheduled annotation,
+        TaskDescriptor descriptor) {
+    }
 
     private record QueueCandidate(Object bean, Class<?> actual, Method method, RdtQueueListener annotation,
-                                  Type payloadType, MessageDescriptor<?> descriptor, ConsumerDescriptor consumer) { }
+        Type payloadType, MessageDescriptor<?> descriptor, ConsumerDescriptor consumer) {
+    }
 }

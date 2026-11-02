@@ -15,28 +15,48 @@ public final class JdbcInboxGuard implements ConsumerGuard {
     private final InboxStore store;
     private final TransactionTemplate transaction;
     private final boolean enabled;
+
     public JdbcInboxGuard(InboxStore store, PlatformTransactionManager manager, boolean enabled) {
-        this.store=store; this.enabled=enabled; transaction=new TransactionTemplate(manager);
+        this.store = store;
+        this.enabled = enabled;
+        transaction = new TransactionTemplate(manager);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
     }
+
     @Override
-    public boolean supportsInbox() { return true; }
+    public boolean supportsInbox() {
+        return true;
+    }
+
     @Override
-    public boolean enabledByDefault() { return enabled; }
+    public boolean enabledByDefault() {
+        return enabled;
+    }
+
     @Override
     public void consume(InboxScope scope, Message message, MessageHandler business) throws Exception {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
-            throw new RdtConfigurationException("Inbox guard must own the outermost transaction; invoke it on the synchronous consumer thread");
+            throw new RdtConfigurationException(
+                "Inbox guard must own the outermost transaction; invoke it on the synchronous consumer thread");
         }
         try {
             JdbcSupport.execute("Inbox transaction", () -> transaction.executeWithoutResult(status -> {
-                if (!store.register(scope)) return;
-                try { business.handle(message); }
-                catch (Exception error) { throw new CheckedBusinessFailure(error); }
+                if (!store.register(scope))
+                    return;
+                try {
+                    business.handle(message);
+                } catch (Exception error) {
+                    throw new CheckedBusinessFailure(error);
+                }
             }));
-        } catch (CheckedBusinessFailure error) { throw (Exception) error.getCause(); }
+        } catch (CheckedBusinessFailure error) {
+            throw (Exception)error.getCause();
+        }
     }
+
     private static final class CheckedBusinessFailure extends RuntimeException {
-        private CheckedBusinessFailure(Exception cause) { super(cause); }
+        private CheckedBusinessFailure(Exception cause) {
+            super(cause);
+        }
     }
 }

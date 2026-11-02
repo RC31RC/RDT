@@ -15,10 +15,8 @@ import java.util.List;
  * @param pendingHighestId PEL 最大消息 ID
  * @param consumerViews 消费者列表
  */
-public record StreamGroupView(String name, int consumers, long pending, long lag,
-                              String lastDeliveredId, long pendingTotal,
-                              String pendingLowestId, String pendingHighestId,
-                              List<StreamConsumerView> consumerViews) {
+public record StreamGroupView(String name, int consumers, long pending, long lag, String lastDeliveredId,
+    long pendingTotal, String pendingLowestId, String pendingHighestId, List<StreamConsumerView> consumerViews) {
     /** 防止调用方修改查询结果。 */
     public StreamGroupView {
         consumerViews = List.copyOf(consumerViews);

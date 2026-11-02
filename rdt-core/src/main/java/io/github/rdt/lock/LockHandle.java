@@ -4,6 +4,7 @@ package io.github.rdt.lock;
 public interface LockHandle extends AutoCloseable {
     /**
      * 返回该句柄是否仍持有有效锁。
+     *
      * @return 该句柄是否仍持有有效锁
      */
     boolean isHeld();

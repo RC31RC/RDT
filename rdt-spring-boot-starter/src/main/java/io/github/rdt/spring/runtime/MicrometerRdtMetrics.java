@@ -7,9 +7,16 @@ import java.util.function.ToDoubleFunction;
 
 public final class MicrometerRdtMetrics implements RdtMetrics {
     private final MeterRegistry registry;
-    public MicrometerRdtMetrics(MeterRegistry registry) { this.registry = registry; }
+
+    public MicrometerRdtMetrics(MeterRegistry registry) {
+        this.registry = registry;
+    }
+
     @Override
-    public void increment(String name, String... tags) { registry.counter(name, tags).increment(); }
+    public void increment(String name, String... tags) {
+        registry.counter(name, tags).increment();
+    }
+
     @Override
     public <T> void gauge(String name, T state, ToDoubleFunction<T> value, String... tags) {
         registry.gauge(name, Tags.of(tags), state, value);

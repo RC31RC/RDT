@@ -21,43 +21,34 @@ final class CacheInvalidationBus {
     }
 
     int subscribe(Consumer<String> invalidator) {
-        return RedisSupport.redis(
-                "subscribe cache invalidation",
-                () -> {
-                    int id =
-                            topic.addListener(
-                                    String.class, (channel, key) -> invalidator.accept(key));
-                    try {
-                        clearingListener =
-                                clearing.addListener(
-                                        String.class, (channel, key) -> invalidator.accept("*"));
-                        return id;
-                    } catch (RuntimeException failure) {
-                        topic.removeListener(id);
-                        throw failure;
-                    }
-                });
+        return RedisSupport.redis("subscribe cache invalidation", () -> {
+            int id = topic.addListener(String.class, (channel, key) -> invalidator.accept(key));
+            try {
+                clearingListener = clearing.addListener(String.class, (channel, key) -> invalidator.accept("*"));
+                return id;
+            } catch (RuntimeException failure) {
+                topic.removeListener(id);
+                throw failure;
+            }
+        });
     }
 
     void publish(String key, boolean localSubscriber) {
-        RedisSupport.redisRun(
-                "invalidate local cache copies",
-                () -> {
-                    // A writer without L1 can still have readers with L1 on other nodes.
-                    // Do not cache a zero subscriber count: a new reader must see every later
-                    // write.
-                    if (localSubscriber || topic.countSubscribers() > 0) {
-                        topic.publish(key);
-                    }
-                });
+        RedisSupport.redisRun("invalidate local cache copies", () -> {
+            // A writer without L1 can still have readers with L1 on other nodes.
+            // Do not cache a zero subscriber count: a new reader must see every later
+            // write.
+            if (localSubscriber || topic.countSubscribers() > 0) {
+                topic.publish(key);
+            }
+        });
     }
 
     void unsubscribe(int listenerId) {
-        RedisSupport.redisRun(
-                "unsubscribe cache invalidation",
-                () -> {
-                    topic.removeListener(listenerId);
-                    if (clearingListener >= 0) clearing.removeListener(clearingListener);
-                });
+        RedisSupport.redisRun("unsubscribe cache invalidation", () -> {
+            topic.removeListener(listenerId);
+            if (clearingListener >= 0)
+                clearing.removeListener(clearingListener);
+        });
     }
 }

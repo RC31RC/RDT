@@ -28,14 +28,17 @@ public class RdtArchiveJob {
     @FunctionalInterface
     public interface Source {
         long read(Instant at, Consumer<List<String>> destination);
-        default boolean available() { return true; }
+
+        default boolean available() {
+            return true;
+        }
     }
 
     @Async("rdtArchiveExecutor")
-    @Scheduled(cron = "${rdt.console.archive.cron:0 0 2 * * ?}",
-            zone = "${rdt.console.archive.zone:Asia/Shanghai}")
+    @Scheduled(cron = "${rdt.console.archive.cron:0 0 2 * * ?}", zone = "${rdt.console.archive.zone:Asia/Shanghai}")
     public void archive() {
-        if (!reader.available()) return;
+        if (!reader.available())
+            return;
         if (!running.compareAndSet(false, true)) {
             LOG.info("Skipping archive: previous run is still active");
             return;
@@ -55,7 +58,11 @@ public class RdtArchiveJob {
             LOG.info("Archive completed for {}: {} records", date, count);
         } catch (RuntimeException failure) {
             if (sink != null) {
-                try { sink.abort(); } catch (RuntimeException abortFailure) { failure.addSuppressed(abortFailure); }
+                try {
+                    sink.abort();
+                } catch (RuntimeException abortFailure) {
+                    failure.addSuppressed(abortFailure);
+                }
             }
             LOG.error("Archive failed; no local archive will be published", failure);
         } finally {

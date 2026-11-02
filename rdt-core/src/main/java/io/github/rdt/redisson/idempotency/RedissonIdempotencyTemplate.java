@@ -38,8 +38,7 @@ public final class RedissonIdempotencyTemplate implements IdempotencyTemplate {
         RdtSupport.positive(completedTtl, "idempotency completed ttl");
         String token = UUID.randomUUID().toString();
         RBucket<String> bucket = bucket(key);
-        boolean acquired = RedisSupport.redis("start idempotent operation",
-                () -> bucket.setIfAbsent(token, leaseTime));
+        boolean acquired = RedisSupport.redis("start idempotent operation", () -> bucket.setIfAbsent(token, leaseTime));
         return acquired ? Optional.of(new Handle(bucket, token, completedTtl)) : Optional.empty();
     }
 
@@ -71,9 +70,8 @@ public final class RedissonIdempotencyTemplate implements IdempotencyTemplate {
             if (closed) {
                 return completed;
             }
-            boolean changed = RedisSupport.redis("complete idempotent operation",
-                    () -> bucket.compareAndSet(CompareAndSetArgs.<String>expected(token)
-                            .set(COMPLETED).timeToLive(completedTtl)));
+            boolean changed = RedisSupport.redis("complete idempotent operation", () -> bucket
+                .compareAndSet(CompareAndSetArgs.<String>expected(token).set(COMPLETED).timeToLive(completedTtl)));
             if (changed) {
                 completed = true;
                 closed = true;
@@ -87,7 +85,7 @@ public final class RedissonIdempotencyTemplate implements IdempotencyTemplate {
                 return false;
             }
             boolean removed = RedisSupport.redis("abort idempotent operation",
-                    () -> bucket.compareAndDelete(CompareAndDeleteArgs.expected(token)));
+                () -> bucket.compareAndDelete(CompareAndDeleteArgs.expected(token)));
             closed = true;
             return removed;
         }

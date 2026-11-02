@@ -33,9 +33,9 @@ import org.redisson.client.codec.StringCodec;
 /** 基于既有 RDT 键协议执行受限管理命令。 */
 public final class RedissonManagementCommandService implements ManagementCommandService {
     private static final String REDIS_TIME = """
-            local t = redis.call('TIME')
-            return t[1] * 1000 + math.floor(t[2] / 1000)
-            """;
+        local t = redis.call('TIME')
+        return t[1] * 1000 + math.floor(t[2] / 1000)
+        """;
 
     private final RedissonClient client;
     private final KeySpace keys;
@@ -43,8 +43,8 @@ public final class RedissonManagementCommandService implements ManagementCommand
     private final JsonCodec json;
 
     /** 创建带 JSON 死信重投能力的命令服务。 */
-    public RedissonManagementCommandService(
-            RedissonClient client, KeySpace keys, DistributedLockTemplate locks, JsonCodec json) {
+    public RedissonManagementCommandService(RedissonClient client, KeySpace keys, DistributedLockTemplate locks,
+        JsonCodec json) {
         this.client = client;
         this.keys = keys;
         this.locks = locks;
@@ -54,9 +54,9 @@ public final class RedissonManagementCommandService implements ManagementCommand
     @Override
     public boolean deleteTaskResults(String taskId) {
         RdtSupport.component(taskId);
-        return RedisSupport.redis("delete task results", () -> client.getKeys().delete(
-                keys.key("schedule-results", taskId), keys.key("management-index", "attempts:" + taskId),
-                keys.key("management-expiry", "attempts:" + taskId),
+        return RedisSupport.redis("delete task results",
+            () -> client.getKeys().delete(keys.key("schedule-results", taskId),
+                keys.key("management-index", "attempts:" + taskId), keys.key("management-expiry", "attempts:" + taskId),
                 keys.key("management-index", "failures:" + taskId),
                 keys.key("management-expiry", "failures:" + taskId)) > 0);
     }
@@ -67,7 +67,8 @@ public final class RedissonManagementCommandService implements ManagementCommand
         try {
             return locks.execute("schedule:" + taskId, LockOptions.defaults(), () -> {
                 String key = keys.key("schedule-state", taskId);
-                if ("true".equals(client.<String, String>getMap(key, StringCodec.INSTANCE).get("retired"))) return false;
+                if ("true".equals(client.<String, String>getMap(key, StringCodec.INSTANCE).get("retired")))
+                    return false;
                 if (client.getKeys().countExists(key) == 0) {
                     return false;
                 }
@@ -75,10 +76,12 @@ public final class RedissonManagementCommandService implements ManagementCommand
                 long now = redisTime();
                 String raw = state.get("execution");
                 JobExecution current = raw == null ? null : json.read(raw, JobExecution.class);
-                if (current != null && !current.terminal()) return false;
-                JobExecution execution = new JobExecution("manual-" + UUID.randomUUID(), taskId, now, 0,
-                        "READY", "", "", "", now, now, "Manual trigger", 0);
-                RScoredSortedSet<String> due = client.getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE);
+                if (current != null && !current.terminal())
+                    return false;
+                JobExecution execution = new JobExecution("manual-" + UUID.randomUUID(), taskId, now, 0, "READY", "",
+                    "", "", now, now, "Manual trigger", 0);
+                RScoredSortedSet<String> due =
+                    client.getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE);
                 state.fastPut("execution", json.write(execution));
                 due.add(now, taskId);
                 return true;
@@ -96,17 +99,21 @@ public final class RedissonManagementCommandService implements ManagementCommand
         try {
             return locks.execute("schedule:" + taskId, LockOptions.defaults(), () -> {
                 Number existed = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, """
-                        local existed = redis.call('EXISTS', KEYS[1])
-                        redis.call('DEL', KEYS[1])
-                        redis.call('HSET', KEYS[1], 'retired', 'true')
-                        return existed
-                        """, RScript.ReturnType.LONG, List.of(keys.key("schedule-state", taskId)));
-                client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE).remove(taskId);
+                    local existed = redis.call('EXISTS', KEYS[1])
+                    redis.call('DEL', KEYS[1])
+                    redis.call('HSET', KEYS[1], 'retired', 'true')
+                    return existed
+                    """, RScript.ReturnType.LONG, List.of(keys.key("schedule-state", taskId)));
+                client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE)
+                    .remove(taskId);
                 new ManagementIndex(client, keys).remove("tasks", taskId);
                 return existed.intValue() != 0;
             });
-        } catch (RuntimeException error) { throw error; }
-        catch (Exception error) { throw new RdtConfigurationException("Cannot retire task", error); }
+        } catch (RuntimeException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new RdtConfigurationException("Cannot retire task", error);
+        }
     }
 
     @Override
@@ -115,20 +122,26 @@ public final class RedissonManagementCommandService implements ManagementCommand
         try {
             return locks.execute("schedule:" + taskId, LockOptions.defaults(), () -> {
                 RMap<String, String> state = client.getMap(keys.key("schedule-state", taskId), StringCodec.INSTANCE);
-                if ("true".equals(state.get("retired")) || !state.containsKey("definition")) return false;
+                if ("true".equals(state.get("retired")) || !state.containsKey("definition"))
+                    return false;
                 state.fastPut("paused", Boolean.toString(paused));
-                if (!paused) client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE).add(0, taskId);
+                if (!paused)
+                    client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE).add(0,
+                        taskId);
                 return true;
             });
-        } catch (RuntimeException error) { throw error; }
-        catch (Exception error) { throw new RdtConfigurationException("Cannot pause task", error); }
+        } catch (RuntimeException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new RdtConfigurationException("Cannot pause task", error);
+        }
     }
 
     @Override
     public boolean drainInstance(String instanceId, boolean draining) {
         RdtSupport.component(instanceId);
         client.<String>getBucket(keys.key("runtime-draining", instanceId), StringCodec.INSTANCE)
-                .set(Boolean.toString(draining));
+            .set(Boolean.toString(draining));
         return true;
     }
 
@@ -139,18 +152,24 @@ public final class RedissonManagementCommandService implements ManagementCommand
             return locks.execute("schedule:" + taskId, LockOptions.defaults(), () -> {
                 RMap<String, String> state = client.getMap(keys.key("schedule-state", taskId), StringCodec.INSTANCE);
                 String raw = state.get("execution");
-                if (raw == null) return false;
+                if (raw == null)
+                    return false;
                 JobExecution current = json.read(raw, JobExecution.class);
-                if (!current.executionId().equals(executionId) || !current.status().equals("FAILED")) return false;
+                if (!current.executionId().equals(executionId) || !current.status().equals("FAILED"))
+                    return false;
                 long now = redisTime();
-                JobExecution retry = new JobExecution("manual-" + UUID.randomUUID(), taskId,
-                        current.scheduledAt(), 0, "READY", "", "", "", now, now, "Retry of " + executionId, 0);
+                JobExecution retry = new JobExecution("manual-" + UUID.randomUUID(), taskId, current.scheduledAt(), 0,
+                    "READY", "", "", "", now, now, "Retry of " + executionId, 0);
                 state.fastPut("execution", json.write(retry));
-                client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE).add(now, taskId);
+                client.<String>getScoredSortedSet(keys.key("schedule-due", "tasks"), StringCodec.INSTANCE).add(now,
+                    taskId);
                 return true;
             });
-        } catch (RuntimeException error) { throw error; }
-        catch (Exception error) { throw new RdtConfigurationException("Cannot retry execution", error); }
+        } catch (RuntimeException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new RdtConfigurationException("Cannot retry execution", error);
+        }
     }
 
     @Override
@@ -162,25 +181,26 @@ public final class RedissonManagementCommandService implements ManagementCommand
             return false;
         }
         Number removed = client.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, """
-                local rows = redis.call('XRANGE', KEYS[1], ARGV[1], ARGV[1])
-                local bytes = 0
-                if #rows == 0 then return 0 end
-                for i = 1, #rows[1][2], 2 do
-                  if rows[1][2][i] == 'message' then bytes = bytes + string.len(rows[1][2][i+1]) end
-                end
-                for _, group in ipairs(redis.call('XINFO', 'GROUPS', KEYS[1])) do
-                  for i = 1, #group, 2 do
-                    if group[i] == 'name' then redis.call('XACK', KEYS[1], group[i+1], ARGV[1]) end
-                  end
-                end
-                redis.call('XDEL', KEYS[1], ARGV[1])
-                local used = tonumber(redis.call('GET', KEYS[2]) or '0')
-                if used <= bytes then redis.call('DEL', KEYS[2])
-                else redis.call('DECRBY', KEYS[2], bytes) end
-                redis.call('HINCRBY', KEYS[3], 'stream', -1)
-                return 1
-                """, RScript.ReturnType.LONG, List.of(key, keys.key("queue-capacity", destination),
-                keys.key("queue-capacity-state", destination)), id.toString());
+            local rows = redis.call('XRANGE', KEYS[1], ARGV[1], ARGV[1])
+            local bytes = 0
+            if #rows == 0 then return 0 end
+            for i = 1, #rows[1][2], 2 do
+              if rows[1][2][i] == 'message' then bytes = bytes + string.len(rows[1][2][i+1]) end
+            end
+            for _, group in ipairs(redis.call('XINFO', 'GROUPS', KEYS[1])) do
+              for i = 1, #group, 2 do
+                if group[i] == 'name' then redis.call('XACK', KEYS[1], group[i+1], ARGV[1]) end
+              end
+            end
+            redis.call('XDEL', KEYS[1], ARGV[1])
+            local used = tonumber(redis.call('GET', KEYS[2]) or '0')
+            if used <= bytes then redis.call('DEL', KEYS[2])
+            else redis.call('DECRBY', KEYS[2], bytes) end
+            redis.call('HINCRBY', KEYS[3], 'stream', -1)
+            return 1
+            """, RScript.ReturnType.LONG,
+            List.of(key, keys.key("queue-capacity", destination), keys.key("queue-capacity-state", destination)),
+            id.toString());
         return removed.intValue() == 1;
     }
 
@@ -193,7 +213,8 @@ public final class RedissonManagementCommandService implements ManagementCommand
         String field = FailedMessage.field(group, messageId, broadcastInstance);
         RMap<String, String> deadLetters = deadLetters(key);
         boolean removed = RedisSupport.redis("delete dead letter", () -> deadLetters.fastRemove(field)) > 0;
-        if (removed) removeDeadLetterIndex(destination, field);
+        if (removed)
+            removeDeadLetterIndex(destination, field);
         return removed;
     }
 
@@ -205,30 +226,36 @@ public final class RedissonManagementCommandService implements ManagementCommand
         String key = keys.key("dead-letters", destination);
         String field = FailedMessage.field(group, messageId, broadcastInstance);
         try {
-            return locks.execute("dead-letter:" + destination + ":" + group + ":" + messageId, LockOptions.defaults(), () -> {
-                String raw = RedisSupport.redis("read dead letter", () -> deadLetters(key).get(field));
-                if (raw == null) {
-                    return false;
-                }
-                FailedMessage failure = json.read(raw, FailedMessage.class);
-                var limiter = client.getRateLimiter(keys.key("dlq-replay-rate",destination));
-                limiter.trySetRate(RateType.OVERALL,10,Duration.ofSeconds(1));
-                if (!limiter.tryAcquire()) throw new RdtQueueException("Dead-letter replay rate exceeded; retry later");
-                var headers = new HashMap<>(failure.message().headers());
-                headers.put("originalMessageId", failure.originalMessageId());
-                // A manual replay is a new delivery. Preserve provenance while allowing Inbox to process it.
-                var replay = new Message(UUID.randomUUID().toString(), failure.message().payload(),
-                        Instant.now().toString(),1,failure.message().key(),null,headers);
-                RedisSupport.redisRun("requeue dead letter", () -> {
-                    if (failure.mode() == QueueMode.BROADCAST) {
-                        client.getTopic(keys.key("topic",destination),StringCodec.INSTANCE).publish(json.write(replay));
-                    } else QueueAdmission.replay(client, keys, destination, json.write(replay));
+            return locks.execute("dead-letter:" + destination + ":" + group + ":" + messageId, LockOptions.defaults(),
+                () -> {
+                    String raw = RedisSupport.redis("read dead letter", () -> deadLetters(key).get(field));
+                    if (raw == null) {
+                        return false;
+                    }
+                    FailedMessage failure = json.read(raw, FailedMessage.class);
+                    var limiter = client.getRateLimiter(keys.key("dlq-replay-rate", destination));
+                    limiter.trySetRate(RateType.OVERALL, 10, Duration.ofSeconds(1));
+                    if (!limiter.tryAcquire())
+                        throw new RdtQueueException("Dead-letter replay rate exceeded; retry later");
+                    var headers = new HashMap<>(failure.message().headers());
+                    headers.put("originalMessageId", failure.originalMessageId());
+                    // A manual replay is a new delivery. Preserve provenance while allowing Inbox to process it.
+                    var replay = new Message(UUID.randomUUID().toString(), failure.message().payload(),
+                        Instant.now().toString(), 1, failure.message().key(), null, headers);
+                    RedisSupport.redisRun("requeue dead letter", () -> {
+                        if (failure.mode() == QueueMode.BROADCAST) {
+                            client.getTopic(keys.key("topic", destination), StringCodec.INSTANCE)
+                                .publish(json.write(replay));
+                        } else
+                            QueueAdmission.replay(client, keys, destination, json.write(replay));
+                    });
+                    boolean removed =
+                        RedisSupport.redis("delete retried dead letter", () -> deadLetters(key).fastRemove(field)) > 0;
+                    if (removed)
+                        removeDeadLetterIndex(destination, field);
+                    new ManagementIndex(client, keys).register("streams", destination);
+                    return removed;
                 });
-                boolean removed = RedisSupport.redis("delete retried dead letter", () -> deadLetters(key).fastRemove(field)) > 0;
-                if (removed) removeDeadLetterIndex(destination, field);
-                new ManagementIndex(client, keys).register("streams", destination);
-                return removed;
-            });
         } catch (Exception e) {
             if (e instanceof RuntimeException runtime) {
                 throw runtime;
@@ -238,7 +265,7 @@ public final class RedissonManagementCommandService implements ManagementCommand
     }
 
     private void removeDeadLetterIndex(String destination, String field) {
-        new ManagementIndex(client, keys).remove("dead-letters", json.write(new String[]{destination, field}));
+        new ManagementIndex(client, keys).remove("dead-letters", json.write(new String[] {destination, field}));
     }
 
     private RMapCache<String, String> deadLetters(String key) {
@@ -247,7 +274,7 @@ public final class RedissonManagementCommandService implements ManagementCommand
 
     private long redisTime() {
         return RedisSupport.redis("read Redis clock", () -> client.getScript(StringCodec.INSTANCE)
-                .eval(RScript.Mode.READ_ONLY, REDIS_TIME, RScript.ReturnType.LONG, List.of()));
+            .eval(RScript.Mode.READ_ONLY, REDIS_TIME, RScript.ReturnType.LONG, List.of()));
     }
 
     private long parseLong(String value, String key) {
@@ -260,7 +287,7 @@ public final class RedissonManagementCommandService implements ManagementCommand
 
     private StreamMessageId messageId(String value) {
         RdtSupport.require(value != null && value.matches("[0-9]+-[0-9]+"),
-                "Stream message ID must use the form milliseconds-sequence");
+            "Stream message ID must use the form milliseconds-sequence");
         String[] parts = value.split("-", -1);
         try {
             return new StreamMessageId(Long.parseLong(parts[0]), Long.parseLong(parts[1]));
@@ -280,14 +307,16 @@ public final class RedissonManagementCommandService implements ManagementCommand
             for (String key : client.getKeys().getKeys(scan)) {
                 String[] parts = key.split(":", 4);
                 String namespace = RdtSupport.decodeComponent(parts[1]).orElse("");
-                if (!namespace.equals(keys.namespace()) && !namespace.startsWith(keys.namespace() + ":region:")) continue;
+                if (!namespace.equals(keys.namespace()) && !namespace.startsWith(keys.namespace() + ":region:"))
+                    continue;
                 batch.add(key);
                 if (batch.size() == 500) {
                     deleted += Math.toIntExact(client.getKeys().unlink(batch.toArray(String[]::new)));
                     batch.clear();
                 }
             }
-            if (!batch.isEmpty()) deleted += Math.toIntExact(client.getKeys().unlink(batch.toArray(String[]::new)));
+            if (!batch.isEmpty())
+                deleted += Math.toIntExact(client.getKeys().unlink(batch.toArray(String[]::new)));
             client.getTopic(keys.key("cache-events", "clear-all"), StringCodec.INSTANCE).publish("*");
             return deleted;
         });

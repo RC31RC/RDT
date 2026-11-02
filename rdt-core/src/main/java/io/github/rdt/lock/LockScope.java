@@ -1,38 +1,39 @@
 package io.github.rdt.lock;
 
-/** 一次同步业务调用的锁集合及其释放边界。 */
+import java.util.Collection;
+
+/** One synchronous business call's lock set and release boundary. */
 public interface LockScope extends AutoCloseable {
+    /** Append a mutual-exclusion range to this scope. */
+    void lock(LockKey key, LockOptions options);
 
-    /**
-     * 在当前作用域中追加锁。
-     *
-     * @param key 逻辑资源键
-     * @param options 锁策略
-     */
-    void lock(String key, LockOptions options);
+    /** Deduplicate and order keys before acquiring them in this scope. */
+    void lockAll(Collection<LockKey> keys, LockOptions options);
 
-    /**
-     * 使用默认锁策略追加一把资源锁。
-     *
-     * @param key 逻辑资源键
-     */
-    default LockOptions defaultOptions() { return LockOptions.defaults(); }
+    /** Default lock strategy supplied by the backend. */
+    default LockOptions defaultOptions() {
+        return LockOptions.defaults();
+    }
 
-    default void lock(String key) {
+    /** Acquire one lock using the effective default strategy. */
+    default void lock(LockKey key) {
         lock(key, defaultOptions());
     }
 
-    /**
-     * 返回当前作用域是否已经持有指定逻辑锁。
-     *
-     * @param key 逻辑资源键
-     * @return 是否持有
-     */
-    boolean holds(String key);
+    /** Acquire multiple locks using the effective default strategy. */
+    default void lockAll(Collection<LockKey> keys) {
+        lockAll(keys, defaultOptions());
+    }
 
-    /**
-     * 释放当前作用域内的所有锁。物理锁按获取顺序逆序释放。
-     */
+    /** Whether this scope holds the specified logical key with the default lock type. */
+    default boolean holds(LockKey key) {
+        return holds(key, defaultOptions().type());
+    }
+
+    /** Whether this scope holds the specified logical key and lock type. */
+    boolean holds(LockKey key, LockType type);
+
+    /** Close this scope; physically release locks in reverse acquisition order unless deferred. */
     @Override
     void close();
 }

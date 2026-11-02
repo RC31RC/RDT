@@ -7,7 +7,7 @@ import java.util.UUID;
 
 /** Identity belongs to one publication and remains unchanged during delivery and Outbox relay. */
 public record MessageMetadata(String messageId, String createdAt, String key, String orderingKey,
-                              Map<String, String> headers) {
+    Map<String, String> headers) {
     public MessageMetadata {
         RdtSupport.component(messageId);
         RdtSupport.require(createdAt != null && !createdAt.isBlank(), "Message creation time is required");

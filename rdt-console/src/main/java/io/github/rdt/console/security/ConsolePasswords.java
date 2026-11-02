@@ -20,20 +20,28 @@ public final class ConsolePasswords {
     }
 
     public boolean matches(String password, String stored) {
-        if (password == null || password.length() > 128) return false;
+        if (password == null || password.length() > 128)
+            return false;
         String[] parts = stored.split("\\$", -1);
         if (parts.length != 4 || !parts[0].equals("pbkdf2-sha256") || !parts[1].equals(Integer.toString(ITERATIONS))) {
             throw new RdtConfigurationException("Unsupported Console password hash format");
         }
-        return MessageDigest.isEqual(derive(password, Base64.getUrlDecoder().decode(parts[2])), Base64.getUrlDecoder().decode(parts[3]));
+        return MessageDigest.isEqual(derive(password, Base64.getUrlDecoder().decode(parts[2])),
+            Base64.getUrlDecoder().decode(parts[3]));
     }
 
     private byte[] derive(String password, byte[] salt) {
         PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), salt, ITERATIONS, 256);
-        try { return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded(); }
-        catch (GeneralSecurityException failure) { throw new RdtConfigurationException("Console password hashing is unavailable", failure); }
-        finally { spec.clearPassword(); }
+        try {
+            return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
+        } catch (GeneralSecurityException failure) {
+            throw new RdtConfigurationException("Console password hashing is unavailable", failure);
+        } finally {
+            spec.clearPassword();
+        }
     }
 
-    private static String encode(byte[] bytes) { return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes); }
+    private static String encode(byte[] bytes) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
 }
